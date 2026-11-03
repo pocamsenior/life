@@ -235,9 +235,9 @@ function render() {
   const fresh = all.filter(e => by(e) && by(e) !== me && (e._at || 0) > seen).length;
   let h = `<div class="crumb">${P.n ? "Shared by " + esc(P.n) : "Shared with you"}</div><h1>${esc(title)}</h1><div class="sub">${esc(subline(type, f))}</div>`;
   h += `<div class="tabs">${tabs.map(t => `<span class="${t === tab ? "on" : ""}" data-tab="${esc(t)}">${esc(t)}</span>`).join("")}</div>`;
-  if (fresh && seen) h += `<div class="new">${fresh} new since you last looked · <span class="caps act" data-seen>Seen</span></div>`;
+  if (fresh && seen) h += `<div class="new">${fresh} new since you last looked · <span class="caps act" data-seen="1">Seen</span></div>`;
   h += body(type, tab, f);
-  h += `<div class="sec"><span class="caps">You are ${nameHTML(me) || "—"}</span><span class="caps act" data-name>${me ? "Change name" : "Add your name"}</span></div>`;
+  h += `<div class="sec"><span class="caps">You are ${nameHTML(me) || "—"}</span><span class="caps act" data-name="1">${me ? "Change name" : "Add your name"}</span></div>`;
   h += `<div class="note wide">Everything here is in the owner's iCloud. What you add shows in their app within a couple of minutes.</div>`;
   $("#app").innerHTML = h;
   if (!seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); }
