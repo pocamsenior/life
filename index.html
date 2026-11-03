@@ -125,9 +125,9 @@ async function ready() {
       if (m) {
         zoneID = m.zoneID || m.share.zoneID;
         STORE("life.zone." + share, JSON.stringify({ zoneID }));
-      } else if (P.z) {
+      } else if (P.z || (zoneID = await ownZone())) {
         // the owner opening their own link: it's in their own iCloud, not shared with them
-        DB = C.privateCloudDatabase; zoneID = { zoneName: P.z };
+        DB = C.privateCloudDatabase; zoneID = P.z ? { zoneName: P.z } : zoneID;
         STORE("life.zone." + share, JSON.stringify({ zoneID, own: true }));
       } else throw new Error(why ? why + " (If you shared this yourself, it's already in your Life app.)" : "This share couldn't be opened.");
     }
@@ -135,6 +135,19 @@ async function ready() {
     await pull();
     setInterval(pull, 60000);
   } catch (e) { STORE("life.zone." + share, ""); fail(e.reason || e.message || String(e)); }
+}
+
+// Your own share: find the zone in your iCloud whose share has this link.
+async function ownZone() {
+  try {
+    const db = C.privateCloudDatabase, r = await db.fetchAllRecordZones();
+    for (const z of (r.zones || []).filter(z => (z.zoneID.zoneName || "").startsWith("life-"))) {
+      const q = await db.fetchRecords([{ recordName: "cloudkit.zoneshare" }], { zoneID: z.zoneID });
+      const rec = q.records && q.records[0];
+      if (rec && JSON.stringify(rec).includes(share)) return z.zoneID;
+    }
+  } catch (e) { }
+  return null;
 }
 
 async function pull() {
