@@ -99,7 +99,10 @@ function start() {
   C.setUpAuth().then(u => u ? ready() : askSignIn()).catch(e => fail("Couldn't reach iCloud: " + (e.reason || e.message || e)));
 }
 function askSignIn() {
-  $("#lead").innerHTML = "Someone shared something with you.";
+  const what = { trip: "a trip", project: "a music project", plan: "a plan" }[P.y] || "something";
+  $("#lead").innerHTML = `<div class="sub">${esc(P.n || "Someone")} shared ${what} with you</div>` + (P.t ? `<h1 style="margin-top:14px">${esc(P.t)}</h1>` : "");
+  if (P.y && HUB[P.y]) document.documentElement.style.setProperty("--c", HUB[P.y]);
+  if (P.t) document.title = P.t;
   $("#signnote").textContent = "Sign in with your Apple ID to see it and add to it. Your name shows next to what you add. No app needed. No Apple ID? You can make one free with any email at appleid.apple.com.";
   C.whenUserSignsIn().then(ready).catch(e => fail(e.reason || e.message || String(e)));
 }
