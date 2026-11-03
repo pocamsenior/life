@@ -107,14 +107,23 @@ async function ready() {
   $("#app").innerHTML = `<div class="center"><div class="sub">Opening…</div></div>`;
   try {
     let z = STORE("life.zone." + share);
-    if (z) zoneID = JSON.parse(z);
+    if (z) { const o = JSON.parse(z); zoneID = o.zoneID || o; if (o.own) DB = C.privateCloudDatabase; }
     else {
-      const r = await C.acceptShares([share]);
-      const res = (r && (r.results || r._results)) || [];
-      const m = res.find(x => x && (x.zoneID || (x.share && x.share.zoneID)));
-      if (!m) throw new Error((res[0] && (res[0].reason || res[0].serverErrorCode)) || "This share couldn't be opened.");
-      zoneID = m.zoneID || m.share.zoneID;
-      STORE("life.zone." + share, JSON.stringify(zoneID));
+      let m = null, why = "";
+      try {
+        const r = await C.acceptShares([share]);
+        const res = (r && (r.results || r._results)) || [];
+        m = res.find(x => x && (x.zoneID || (x.share && x.share.zoneID)));
+        if (!m) why = (res[0] && (res[0].reason || res[0].serverErrorCode)) || "";
+      } catch (e) { why = e.reason || e.message || String(e); }
+      if (m) {
+        zoneID = m.zoneID || m.share.zoneID;
+        STORE("life.zone." + share, JSON.stringify({ zoneID }));
+      } else if (P.z) {
+        // the owner opening their own link: it's in their own iCloud, not shared with them
+        DB = C.privateCloudDatabase; zoneID = { zoneName: P.z };
+        STORE("life.zone." + share, JSON.stringify({ zoneID, own: true }));
+      } else throw new Error(why || "This share couldn't be opened.");
     }
     if (!me) { try { const id = await C.fetchCurrentUserIdentity(); const n = id && id.nameComponents; if (n && n.givenName) { me = n.givenName; STORE("life.name", me); } } catch (e) { } }
     await pull();
