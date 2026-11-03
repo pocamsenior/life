@@ -47,6 +47,13 @@
   .err{color:var(--red);font-size:13px;padding:8px 0}
   #signin,#signout{margin-top:18px}
   .hide{display:none}
+  .veil{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px;z-index:10}
+  .pop{width:100%;max-width:440px;background:#16161a;border:1px solid var(--line2);border-radius:10px;padding:20px 24px 22px}
+  .pop .place{font-size:11px;color:var(--muted)}
+  .pop .ttl{font-size:18px;font-weight:700;border-bottom:1px solid var(--c);padding-bottom:6px;margin-bottom:10px}
+  .pop .hint{color:var(--muted);font-size:13px;margin:4px 0 10px}
+  .pop .two{display:flex;gap:10px;margin-top:16px}
+  .pop .two .btn{flex:1;text-align:center}
 </style>
 </head>
 <body>
@@ -234,7 +241,7 @@ function render() {
   h += `<div class="note wide">Everything here is in the owner's iCloud. What you add shows in their app within a couple of minutes.</div>`;
   $("#app").innerHTML = h;
   if (!seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); }
-  if (!me) askName();
+  if (!me && !$("#veil")) askName();
 }
 function subline(type, f) {
   if (type === "trip") { const a = fv(f, "start"), b = fv(f, "end"); return [a ? fmt(a) + (b ? "–" + fmt(b) : "") : "Dates not set", txt(f, "state")].filter(Boolean).join(" · "); }
@@ -317,9 +324,29 @@ function polls() {
   }
   return h;
 }
+// Life-style pop-ups: centered, flat; typing saves, clicking outside closes (and keeps what you typed)
+function pop(html, onClose) {
+  closePop();
+  const v = document.createElement("div"); v.className = "veil"; v.id = "veil";
+  v.innerHTML = `<div class="pop">${html}</div>`;
+  v.addEventListener("click", e => { if (e.target === v) { if (onClose) onClose(); closePop(); } });
+  document.body.appendChild(v);
+  const i = v.querySelector("input"); if (i) setTimeout(() => i.focus(), 30);
+  return v;
+}
+function closePop() { const v = $("#veil"); if (v) v.remove(); }
 function askName() {
-  const n = prompt("Your name, so the others know what you added:", me || "");
-  if (n && n.trim()) { me = n.trim().slice(0, 40); STORE("life.name", me); render(); }
+  const save = () => { const i = $("#nameIn"), n = i && i.value.trim(); if (n) { me = n.slice(0, 40); STORE("life.name", me); render(); } };
+  const v = pop(`<div class="place">${esc(document.title)}</div><div class="ttl">Your name</div>
+    <div class="hint">So the others know what you added. It shows next to your ideas, votes and comments.</div>
+    <input id="nameIn" placeholder="Your name (Sam, Sammy…)" value="${esc(me)}">`, save);
+  v.querySelector("input").addEventListener("keydown", e => { if (e.key === "Enter") { save(); closePop(); } });
+}
+function ask(title, detail, action, yes) {
+  const v = pop(`<div class="ttl" style="border:0;margin:0">${esc(title)}</div>${detail ? `<div class="hint">${esc(detail)}</div>` : ""}
+    <div class="two"><span class="btn" id="askYes" style="color:var(--red)">${esc(action)}</span><span class="btn" id="askNo">Keep</span></div>`);
+  v.querySelector("#askYes").onclick = () => { closePop(); yes(); };
+  v.querySelector("#askNo").onclick = closePop;
 }
 
 // ---------- clicks ----------
@@ -356,7 +383,7 @@ document.addEventListener("click", async ev => {
     open["r." + p] = "";
     await save("comments", e);
   }
-  else if (d.del) { const [k, id] = d.del.split("|"); const e = E(k).find(x => x.id === id); if (e && confirm("Remove “" + (e.title || "this") + "”?")) await remove(e); }
+  else if (d.del) { const [k, id] = d.del.split("|"); const e = E(k).find(x => x.id === id); if (e) ask("Remove “" + (e.title || "this") + "”?", "It goes for everyone in this share.", "Remove", () => remove(e)); }
   else if (d.rsvp) {
     if (!me) return askName();
     const w = E("who").find(x => (x.title || "").toLowerCase() === me.toLowerCase() || by(x) === me);
@@ -374,7 +401,8 @@ document.addEventListener("click", async ev => {
   else if (d.seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); render(); }
 });
 document.addEventListener("keydown", ev => {
-  if (ev.key !== "Enter") return;
+  if (ev.key === "Escape") { closePop(); return; }
+  if (ev.key !== "Enter" || ev.target.id === "nameIn") return;
   const c = ev.target.dataset && ev.target.dataset.ctext; if (c) { document.querySelector(`[data-csend="${c}"]`).click(); return; }
   const f = ev.target.closest && ev.target.closest("[data-form]"); if (f) document.querySelector(`[data-post="${f.dataset.form}"]`).click();
 });
