@@ -84,7 +84,7 @@ const slug = (() => { const m = decodeURIComponent(location.pathname).replace(/\
 const env = P.e || "production";
 const key = (window.LIFE_KEY || "").trim() || P.k || STORE("life.k");
 if (P.k) STORE("life.k", P.k);
-const HUB = { trip: "#ffad87", project: "#ffc21a", plan: "#4c7dff" };
+const HUB = { trip: "#ffad87", project: "#ffc21a", plan: "#4c7dff", set: "#ffc21a" };
 const PEOPLE = ["#5edadb", "#e57fdd", "#8cda8f", "#deceff", "#e0e77d", "#ffadd2", "#aef2ff", "#80bdfb"];
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -382,7 +382,8 @@ function render() {
   document.documentElement.style.setProperty("--c", HUB[type] || "#ffad87");
   document.title = title;
   const tabs = type === "trip" ? ["Overview", "Ideas", ...(see.includes("Paths") ? ["Paths"] : []), ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Itinerary days") ? ["Itinerary"] : []), ...(see.includes("To-dos") ? ["To-dos"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Estimate") && can("estimate") ? ["Estimate"] : []), ...(see.includes("Places") ? ["Places"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
-    : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Tracklist") ? ["Tracklist"] : []), ...(see.includes("Listen") ? ["Listen"] : []), ...(see.includes("Cover options") ? ["Covers"] : []), ...(see.includes("References") ? ["References"] : []), ...(see.includes("Lyrics") ? ["Lyrics"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Sessions") ? ["Sessions"] : []), ...(see.includes("Release plan") ? ["Release Plan"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
+    : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Tracklist") ? ["Tracklist"] : []), ...(see.includes("Listen") ? ["Listen"] : []), ...(see.includes("Cover options") ? ["Covers"] : []), ...(see.includes("References") ? ["References"] : []), ...(see.includes("Lyrics") ? ["Lyrics"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Sessions") ? ["Sessions"] : []), ...(see.includes("Credits") ? ["Credits"] : []), ...(see.includes("Release plan") ? ["Release Plan"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
+    : type === "set" ? ["Set", ...(see.includes("Notes") ? ["Notes"] : [])]
     : ["Plan", "Polls", ...(see.includes("Bring and Do") ? ["Bring and Do"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])];
   if (can("invite") && DB !== C.privateCloudDatabase) tabs.push("People");
   if (!tabs.includes(tab)) tab = tabs[0];
@@ -415,7 +416,15 @@ function sec(t, right = "") { return `<div class="sec"><b>${esc(t)}</b><span cla
 
 function body(type, t, f) {
   const orEmpty = (h, what) => h || `<div class="empty">Nothing in ${what} yet.</div>`;
-  if (t === "Overview" && type === "trip") return sec("Overview") + orEmpty(lv("When", esc(subline("trip", f))) + lv("Best time", esc(txt(f, "best"))) + lv("Estimate", f.cost ? "$" + esc(txt(f, "cost")) : "") + lv("Why", esc(txt(f, "why"))) + lv("Trip time", esc(txt(f, "tripTzName"))), "the overview");
+  if (t === "Overview" && type === "trip") {
+    // mirrors Life's calmer Overview: the stage, then Where, Who, Cost, Time, and Why
+    const st = txt(f, "state") || "Dreaming", stages = ["Dreaming", "Planned", "Now", "Past"], si = stages.indexOf(st);
+    let h = `<div style="display:flex;gap:4px;padding:16px 0 4px">${stages.map((x, i) => `<div style="flex:1"><div style="height:${i === si ? 6 : 3}px;background:${i <= si ? "var(--c)" : "var(--line2)"}"></div><div class="caps" style="color:${i === si ? "var(--c)" : "var(--faint)"};padding-top:4px">${x}</div></div>`).join("")}</div>`;
+    const where = (fv(f, "_where") || []).join(" · "), who = (fv(f, "_who") || []).map(n => nameHTML(n)).join(" · ");
+    h += orEmpty(lv("Where", esc(where)) + lv("Dates", esc(subline("trip", f).split(" · ")[0])) + lv("Who", who) + lv("Cost", esc(txt(f, "_cost"))) + lv("Time", esc(txt(f, "tripTzName"))), "the overview");
+    if (txt(f, "why")) h += `<div class="caps" style="padding-top:14px">Why</div><div class="t" style="padding:4px 0">${esc(txt(f, "why"))}</div>`;
+    return h;
+  }
   if (t === "Overview" && type === "project") {
     const see = fv(f, "_theySee") || [], songs = (fv(f, "songsShared") || []).map(s => s.split("|"));
     let h = sec("Overview") + orEmpty(lv("Kind", esc(txt(f, "kind"))) + lv("Stage", esc(txt(f, "status"))) + lv("Release", fv(f, "release") ? esc(fmt(fv(f, "release"))) : ""), "the overview");
@@ -426,6 +435,8 @@ function body(type, t, f) {
   if (t === "Ideas") return list("ideas", "Ideas", "+ Idea", [["title", "An idea (a place, food, something to do)"], ["source", "A link (optional)"]]);
   if (t === "People") return peopleTab();
   if (t === "Tracklist") return tracklist(f);
+  if (t === "Set") return setList(f);
+  if (t === "Credits") return credits(f);
   if (t === "Listen") return listen();
   if (t === "Covers") return covers();
   if (t === "References") return list("refs", "References", "+ Send a link", [["link", "A link (song, video, playlist)"], ["line", "Why this one (optional)"]]);
@@ -440,7 +451,11 @@ function body(type, t, f) {
   if (t === "Songs to Consider") return list("consider", "Songs to Consider", "+ Suggest a song", [["title", "Song (and artist)"], ["why", "Why (optional)"]]);
   if (t === "Itinerary") { const ps = E("plans").slice().sort((a, b) => (a.date || 0) - (b.date || 0)); return sec("Itinerary") + (ps.length ? ps.map(p => `<div class="row"><div><div class="t">${esc(p.title)}</div><div class="l">${esc(p.line || "")}</div></div><div class="caps">${esc(fmt(toDate(p.date)))}</div></div>`).join("") : `<div class="empty">Nothing on the itinerary yet.</div>`); }
   if (t === "Costs") { const cs = [...E("spent"), ...E("costs")]; return sec("Split Costs") + (cs.length ? cs.map(c => `<div class="row"><div><div class="t">${esc(c.title)}</div><div class="l">${esc(txt(c.f, "paidBy") ? "Paid by " + txt(c.f, "paidBy") : "")}</div></div><div>$${esc(txt(c.f, "amount"))}</div></div>`).join("") : `<div class="empty">No split costs.</div>`) + payments(); }
-  if (t === "Checklist" || t === "Bring and Do") { const cs = state.checks[t === "Checklist" ? "checklist" : "bring"] || []; return sec(t) + (cs.length ? cs.map(c => `<div class="row"><div class="t" style="color:${c.done ? "var(--faint)" : "var(--ink)"}">${c.done ? "✓ " : ""}${esc(c.text)}</div></div>`).join("") : `<div class="empty">Nothing yet.</div>`); }
+  if (t === "Checklist" || t === "Bring and Do") {
+    const cs = state.checks[t === "Checklist" ? "checklist" : "bring"] || [];
+    return sec(t) + (cs.length ? cs.map(c => `<div class="row"><div><div class="t" style="color:${c.done ? "var(--faint)" : "var(--ink)"}">${c.done ? "✓ " : ""}${esc(c.text)}</div><div class="l">${c.who ? nameHTML(c.who === "Me" ? (P.n || "Owner") : c.who) : ""}${c.due ? " · by " + esc(fmt(toDate(c.due))) : ""}</div></div>${t === "Checklist" && c.who === me && can("tick") ? `<span class="caps act" data-ctick="${esc(c.id)}">${c.done ? "Not done" : "Done"}</span>` : ""}</div>`).join("") : `<div class="empty">Nothing yet.</div>`)
+      + (type === "project" && can("add") ? `<div style="padding-top:16px"><span class="caps act" data-upload="1">+ Send a file</span> <span class="l">(stems, a vocal take, artwork)</span></div>` : "");
+  }
   if (t === "Polls") return polls();
   return "";
 }
@@ -477,6 +492,34 @@ function covers() {
     h += `<div><img src="${esc(c.url)}" style="width:160px;height:160px;object-fit:cover;border-radius:4px;display:block" oncontextmenu="return false"><div style="padding-top:6px">${votes.map(v => `<span class="sq" style="background:${color(by(v))}"></span>`).join("")} ${can("vote") ? `<span class="caps act" data-vote="${c.id}" style="color:${mine ? "var(--c)" : "var(--muted)"}">${mine ? "Voted" : "+ Vote"}</span>` : ""}</div></div>`;
   }
   return h + `</div>`;
+}
+// U181 · a set list for the band: songs in order, comment and vote per song, suggest an order
+function setList(f) {
+  const ss = (fv(f, "_setSongs") || []).map(x => x.split("␟"));
+  let h = sec("Set", `<span class="caps">${ss.length} songs</span>`);
+  if (!ss.length) return h + `<div class="empty">No songs yet.</div>`;
+  if (can("comment")) h += `<div class="form" style="flex-direction:row;align-items:center"><input id="orderIn" placeholder="Suggest an order: song numbers, like 3, 1, 2"><span class="btn" data-order="1">Suggest</span></div>`;
+  h += E("orders").map(o => `<div class="l" style="padding:2px 0">${nameHTML(by(o))} suggested ${esc((fv(o.f, "order") || []).join(", "))}</div>`).join("");
+  ss.forEach(([sid, name, key, bpm], i) => {
+    const pid = "song." + sid, cs = E("comments").filter(c => txt(c.f, "parent") === pid), votes = E("votes").filter(v => txt(v.f, "parent") === pid), mine = votes.find(v => by(v) === me);
+    h += `<div class="row"><div><span style="font-family:ui-monospace,Menlo,monospace;color:var(--c)">${String(i + 1).padStart(2, "0")}</span> <span class="t">${esc(name)}</span> <span class="l">${esc([key, bpm ? bpm + " BPM" : ""].filter(Boolean).join(" · "))}</span></div>
+      <div class="acts"><span>${votes.map(v => `<span class="sq" style="background:${color(by(v))}"></span>`).join("")}</span>${can("vote") ? `<span class="caps act" data-vote="${pid}" style="color:${mine ? "var(--c)" : "var(--muted)"}">${mine ? "Voted" : "+ Vote"}</span>` : ""}${can("comment") ? `<span class="caps act" data-cmt="${pid}">${cs.length ? cs.length + " comment" + (cs.length > 1 ? "s" : "") : "Comment"}</span>` : ""}</div></div>`;
+    if (open["c." + pid]) h += thread(pid, cs);
+  });
+  return h;
+}
+// U178 · credits: Confirm, or Suggest a fix
+function credits(f) {
+  const cs = (fv(f, "_credits") || []).map(x => x.split("␟"));
+  if (!cs.length) return sec("Credits") + `<div class="empty">No credits shared yet.</div>`;
+  let h = "", song = null;
+  for (const [sid, title, name, kind, role, cid] of cs) {
+    if (sid !== song) { song = sid; h += sec(title); }
+    const notes = E("creditNotes").filter(n => txt(n.f, "creditID") === cid);
+    h += `<div class="row"><div><div class="t">${esc(name)}</div><div class="l">${esc([kind, role].filter(Boolean).join(" · "))}${notes.map(n => " · " + (n.kind === "Confirm" ? "✓ " : "→ " + esc(n.title) + " ") + nameHTML(by(n))).join("")}</div></div>
+      <div class="acts">${can("comment") ? `<span class="caps act" data-credit="${esc(sid)}|${esc(cid)}|${esc(name)}|Confirm">Confirm</span><span class="caps act" style="color:var(--muted)" data-credit="${esc(sid)}|${esc(cid)}|${esc(name)}|Fix">Suggest a fix</span>` : ""}</div></div>`;
+  }
+  return h;
 }
 // U176 · the tracklist: order, sides, marks, lengths; + Vote and Comment per track
 function tracklist(f) {
@@ -690,7 +733,7 @@ function ask(title, detail, action, yes) {
 document.addEventListener("click", async ev => {
   const j = ev.target.closest("[data-join],[data-askagain]");
   if (j) { if (j.dataset.join) await askToJoin(); else showAsk(); return; }
-  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-order],[data-moment],[data-seek],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave]");
+  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-credit],[data-ctick],[data-upload],[data-order],[data-moment],[data-seek],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave]");
   if (!t) return;
   const d = t.dataset;
   if (d.tab) { tab = d.tab; STORE("life.tab", tab); render(); }
@@ -742,6 +785,31 @@ document.addEventListener("click", async ev => {
   else if (d.seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); STORE("life.seenIDs." + share, "[]"); render(); }
   else if (d.jump) { const [k, id] = d.jump.split("|"); markSeen(id); if (TABOF[k]) { tab = TABOF[k]; STORE("life.tab", tab); } if (k === "comments" || k === "votes") { const e = E(k).find(x => x.id === id); const p = e && txt(e.f, "parent"); if (p) open["c." + p] = true; } render(); }
   else if (d.allnew) { open.allNew = true; render(); }
+  else if (d.credit) {
+    if (!me) return askName();
+    const [sid, cid, name, kind] = d.credit.split("|");
+    let fix = "";
+    if (kind === "Fix") { fix = (prompt("The right credit for “" + name + "”:", name) || "").trim(); if (!fix) return; }
+    await save("creditNotes", { title: fix, kind, date: now(), f: { song: { t: "s", v: sid }, creditID: { t: "s", v: cid }, credit: { t: "s", v: name } } });
+  }
+  else if (d.ctick) {
+    // a checklist step that's yours: tick it (the whole checklist is one record)
+    const k = "checklist", cs = (state.checks[k] || []).map(c => c.id === d.ctick ? Object.assign({}, c, { done: !c.done }) : c);
+    const rec = Object.values(state.recs).find(x => x.recordName === "checks." + k);
+    const r = await DB.saveRecords([{ recordType: "LifeItem", recordName: "checks." + k, recordChangeTag: rec && rec.recordChangeTag, zoneID, fields: { kind: { value: "checks" }, key: { value: k }, json: { value: b64e(JSON.stringify(cs)), type: "BYTES" }, by: { value: me } } }], { zoneID });
+    if (r.hasErrors) alertLine(r.errors[0].reason || "Couldn't tick it."); else await pull();
+  }
+  else if (d.upload) {
+    const inp = document.createElement("input"); inp.type = "file"; inp.multiple = true;
+    inp.onchange = async () => {
+      for (const file of inp.files) {
+        const r = await DB.saveRecords([{ recordType: "LifeItem", recordName: "upload." + uuid(), zoneID, fields: { kind: { value: "upload" }, slot: { value: "fromFriends" }, name: { value: file.name }, sender: { value: me }, file: { value: file } } }], { zoneID });
+        if (r.hasErrors) { alertLine(r.errors[0].reason || "Couldn't send the file."); return; }
+      }
+      alertLine("Sent. It shows in the project's Files in Life."); await pull();
+    };
+    inp.click();
+  }
   else if (d.order) { if (!me) return askName(); const v = ($("#orderIn") || {}).value || ""; const nums = v.split(/[^0-9]+/).filter(Boolean); if (!nums.length) return; await save("orders", { title: "", date: now(), f: { order: { t: "l", v: nums } } }); }
   else if (d.seek) { const [b, at] = d.seek.split("|"); const a = document.getElementById("au-" + b); if (a) { a.currentTime = +at; a.play(); } }
   else if (d.moment) { if (!me) return askName(); const a = document.getElementById("au-" + d.moment), i = document.querySelector(`[data-mtext="${d.moment}"]`), v = i && i.value.trim(); if (!v) return; await save("moments", { title: v, date: now(), f: { parent: { t: "s", v: d.moment }, at: { t: "n", v: Math.round(a ? a.currentTime : 0) } } }); }
