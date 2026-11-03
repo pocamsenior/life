@@ -70,8 +70,8 @@ const H = location.hash.slice(1);
 const P = H.includes("=") ? Object.fromEntries(new URLSearchParams(H)) : (() => { const [s, t, n] = H.split("/").map(x => { try { return decodeURIComponent(x || ""); } catch (e) { return x || ""; } }); return { s, t, n }; })();
 const STORE = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
 let share = (P.s || "").replace(/^.*\/share\//, "").replace(/#.*$/, "");
-// Shortest links: pocamsenior.github.io/life/trip-name (the name is looked up in the owner's public iCloud)
-const slug = decodeURIComponent(location.pathname.replace(/^\/life\/?/, "").replace(/\/+$/, "").replace(/\.html$/, "")).replace(/^(index|404)$/, "");
+// Links: pocamsenior.github.io/life/trips/lisbon, /life/music/night-drive, /life/plan/game-night (looked up in the owner's public iCloud)
+const slug = (() => { const m = decodeURIComponent(location.pathname).replace(/\/+$/, "").match(/^\/life\/(trips|music|plan)\/([^/]+)$/); return m ? m[1] + "." + m[2].toLowerCase() : ""; })();
 const env = P.e || "production";
 const key = (window.LIFE_KEY || "").trim() || P.k || STORE("life.k");
 if (P.k) STORE("life.k", P.k);
@@ -105,7 +105,7 @@ function start() {
   (slug && !share ? lookup() : Promise.resolve()).then(() => C.setUpAuth()).then(u => u ? ready() : askSignIn()).catch(e => fail("Couldn't reach iCloud: " + (e.reason || e.message || e)));
 }
 async function lookup() {
-  const r = await C.publicCloudDatabase.fetchRecords([{ recordName: "link." + slug.toLowerCase() }]);
+  const r = await C.publicCloudDatabase.fetchRecords([{ recordName: "link." + slug }]);
   const rec = r.records && r.records[0];
   if (!rec || rec.serverErrorCode || !rec.fields || !rec.fields.guid) throw { reason: "This link isn't shared anymore, or the name is spelled differently." };
   const v = k => rec.fields[k] ? rec.fields[k].value : "";
