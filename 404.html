@@ -313,6 +313,10 @@ async function pull() {
   }
   const s = { fields: {}, checks: {}, entries: {}, recs };
   for (const x of Object.values(recs)) {
+    if (x.recordType === "LifeItem" && x.fields && x.fields.kind && x.fields.kind.value === "file" && x.fields.file) {
+      (s.files = s.files || []).push({ id: x.recordName.replace(/^file\./, ""), slot: (x.fields.slot || {}).value || "", parent: (x.fields.parent || {}).value || "", name: (x.fields.name || {}).value || "", url: x.fields.file.value.downloadURL });
+      continue;
+    }
     if (x.recordType !== "LifeItem" || !x.fields || !x.fields.json) continue;
     let data; try { data = JSON.parse(b64d(x.fields.json.value)); } catch (e) { continue; }
     const kind = x.fields.kind && x.fields.kind.value, k = x.fields.key && x.fields.key.value;
@@ -321,6 +325,8 @@ async function pull() {
     else if (kind === "entry") { data._rn = x.recordName; data._tag = x.recordChangeTag; data._at = x.created && x.created.timestamp; (s.entries[k] = s.entries[k] || []).push(data); }
   }
   state = s; loaded = true;
+  // don't redraw under someone who's listening
+  if ([...document.querySelectorAll("audio")].some(a => !a.paused)) return;
   render();
 }
 
@@ -376,7 +382,7 @@ function render() {
   document.documentElement.style.setProperty("--c", HUB[type] || "#ffad87");
   document.title = title;
   const tabs = type === "trip" ? ["Overview", "Ideas", ...(see.includes("Paths") ? ["Paths"] : []), ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Itinerary days") ? ["Itinerary"] : []), ...(see.includes("To-dos") ? ["To-dos"] : []), ...(see.includes("Estimate") && can("estimate") ? ["Estimate"] : []), ...(see.includes("Places") ? ["Places"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
-    : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Tracklist") ? ["Tracklist"] : []), ...(see.includes("References") ? ["References"] : []), ...(see.includes("Lyrics") ? ["Lyrics"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Release plan") ? ["Release Plan"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
+    : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Tracklist") ? ["Tracklist"] : []), ...(see.includes("Listen") ? ["Listen"] : []), ...(see.includes("Cover options") ? ["Covers"] : []), ...(see.includes("References") ? ["References"] : []), ...(see.includes("Lyrics") ? ["Lyrics"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Release plan") ? ["Release Plan"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
     : ["Plan", "Polls", ...(see.includes("Bring and Do") ? ["Bring and Do"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])];
   if (can("invite") && DB !== C.privateCloudDatabase) tabs.push("People");
   if (!tabs.includes(tab)) tab = tabs[0];
@@ -420,6 +426,8 @@ function body(type, t, f) {
   if (t === "Ideas") return list("ideas", "Ideas", "+ Idea", [["title", "An idea (a place, food, something to do)"], ["source", "A link (optional)"]]);
   if (t === "People") return peopleTab();
   if (t === "Tracklist") return tracklist(f);
+  if (t === "Listen") return listen();
+  if (t === "Covers") return covers();
   if (t === "References") return list("refs", "References", "+ Send a link", [["link", "A link (song, video, playlist)"], ["line", "Why this one (optional)"]]);
   if (t === "Lyrics") return lyrics(f);
   if (t === "Release Plan") return releasePlan(f);
@@ -434,6 +442,40 @@ function body(type, t, f) {
   if (t === "Checklist" || t === "Bring and Do") { const cs = state.checks[t === "Checklist" ? "checklist" : "bring"] || []; return sec(t) + (cs.length ? cs.map(c => `<div class="row"><div class="t" style="color:${c.done ? "var(--faint)" : "var(--ink)"}">${c.done ? "✓ " : ""}${esc(c.text)}</div></div>`).join("") : `<div class="empty">Nothing yet.</div>`); }
   if (t === "Polls") return polls();
   return "";
+}
+// U178 · Listen: shared bounces streamed (no download), notes at a moment, Which mix? votes
+const mmss = x => Math.floor(x / 60) + ":" + String(Math.floor(x % 60)).padStart(2, "0");
+function listen() {
+  const fs = (state.files || []).filter(x => x.slot === "listen");
+  let h = sec("Listen", `<span class="caps">${fs.length}</span>`);
+  if (!fs.length) return h + `<div class="empty">No bounces shared yet.</div>`;
+  const songs = [...new Set(fs.map(x => x.parent))];
+  for (const sg of songs) {
+    const bs = fs.filter(x => x.parent === sg);
+    h += `<div class="caps" style="padding-top:16px">${esc(sg)}${bs.length > 1 ? " · Which mix?" : ""}</div>`;
+    for (const b of bs) {
+      const votes = E("votes").filter(v => txt(v.f, "parent") === b.id), mine = votes.find(v => by(v) === me);
+      const notes = E("moments").filter(m => txt(m.f, "parent") === b.id).sort((a, c) => (+fv(a.f, "at") || 0) - (+fv(c.f, "at") || 0));
+      h += `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px"><span class="t">${esc(b.name)}</span>
+        <span class="acts"><span>${votes.map(v => `<span class="sq" style="background:${color(by(v))}"></span>`).join("")}</span>${can("vote") ? `<span class="caps act" data-vote="${b.id}" style="color:${mine ? "var(--c)" : "var(--muted)"}">${mine ? "Voted" : bs.length > 1 ? "This mix" : "+ Vote"}</span>` : ""}</span></div>
+        <audio controls controlsList="nodownload" preload="none" src="${esc(b.url)}" id="au-${b.id}" style="width:100%;margin-top:8px" oncontextmenu="return false"></audio>
+        ${notes.map(n => `<div class="l" style="padding:3px 0"><span class="caps act" data-seek="${b.id}|${+fv(n.f, "at") || 0}" style="color:${color(by(n))}">▼ ${mmss(+fv(n.f, "at") || 0)}</span> ${nameHTML(by(n))} ${esc(n.title)}${txt(n.f, "state") ? " · " + esc(txt(n.f, "state")) : ""}</div>`).join("")}
+        ${can("comment") ? `<div class="form" style="flex-direction:row;align-items:center"><input data-mtext="${b.id}" placeholder="A note at this moment (pause where you mean)"><span class="btn" data-moment="${b.id}">Add at the playhead</span></div>` : ""}</div>`;
+    }
+  }
+  return h;
+}
+// U178 · cover options to vote on
+function covers() {
+  const fs = (state.files || []).filter(x => x.slot === "cover");
+  let h = sec("Cover Options", `<span class="caps">${fs.length}</span>`);
+  if (!fs.length) return h + `<div class="empty">No cover options yet.</div>`;
+  h += `<div style="display:flex;flex-wrap:wrap;gap:16px;padding-top:12px">`;
+  for (const c of fs) {
+    const votes = E("votes").filter(v => txt(v.f, "parent") === c.id), mine = votes.find(v => by(v) === me);
+    h += `<div><img src="${esc(c.url)}" style="width:160px;height:160px;object-fit:cover;border-radius:4px;display:block" oncontextmenu="return false"><div style="padding-top:6px">${votes.map(v => `<span class="sq" style="background:${color(by(v))}"></span>`).join("")} ${can("vote") ? `<span class="caps act" data-vote="${c.id}" style="color:${mine ? "var(--c)" : "var(--muted)"}">${mine ? "Voted" : "+ Vote"}</span>` : ""}</div></div>`;
+  }
+  return h + `</div>`;
 }
 // U176 · the tracklist: order, sides, marks, lengths; + Vote and Comment per track
 function tracklist(f) {
@@ -644,7 +686,7 @@ function ask(title, detail, action, yes) {
 document.addEventListener("click", async ev => {
   const j = ev.target.closest("[data-join],[data-askagain]");
   if (j) { if (j.dataset.join) await askToJoin(); else showAsk(); return; }
-  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave]");
+  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-moment],[data-seek],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave]");
   if (!t) return;
   const d = t.dataset;
   if (d.tab) { tab = d.tab; STORE("life.tab", tab); render(); }
@@ -696,6 +738,8 @@ document.addEventListener("click", async ev => {
   else if (d.seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); STORE("life.seenIDs." + share, "[]"); render(); }
   else if (d.jump) { const [k, id] = d.jump.split("|"); markSeen(id); if (TABOF[k]) { tab = TABOF[k]; STORE("life.tab", tab); } if (k === "comments" || k === "votes") { const e = E(k).find(x => x.id === id); const p = e && txt(e.f, "parent"); if (p) open["c." + p] = true; } render(); }
   else if (d.allnew) { open.allNew = true; render(); }
+  else if (d.seek) { const [b, at] = d.seek.split("|"); const a = document.getElementById("au-" + b); if (a) { a.currentTime = +at; a.play(); } }
+  else if (d.moment) { if (!me) return askName(); const a = document.getElementById("au-" + d.moment), i = document.querySelector(`[data-mtext="${d.moment}"]`), v = i && i.value.trim(); if (!v) return; await save("moments", { title: v, date: now(), f: { parent: { t: "s", v: d.moment }, at: { t: "n", v: Math.round(a ? a.currentTime : 0) } } }); }
   else if (d.lyr) { open.lyr = open.lyr === d.lyr ? "" : d.lyr; render(); const i = $("#lyrText"); if (i) i.focus(); }
   else if (d.lyrsend) { if (!me) return askName(); const [sid, line, kind] = d.lyrsend.split("|"); const v = ($("#lyrText") || {}).value; if (!v || !v.trim()) return; open.lyr = ""; await save("lyricNotes", { title: v.trim(), kind, date: now(), f: { song: { t: "s", v: sid }, line: { t: "s", v: line } } }); }
   else if (d.letin) { const [uid, name, st] = d.letin.split("|"); await save("letins", { title: name, date: now(), f: { uid: { t: "s", v: uid }, answer: { t: "s", v: st } } }); }
