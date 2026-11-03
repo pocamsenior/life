@@ -297,8 +297,10 @@ function sec(t, right = "") { return `<div class="sec"><b>${esc(t)}</b><span cla
 function body(type, t, f) {
   if (t === "Overview" && type === "trip") return sec("Overview") + lv("When", esc(subline("trip", f))) + lv("Best time", esc(txt(f, "best"))) + lv("Estimate", f.cost ? "$" + esc(txt(f, "cost")) : "") + lv("Why", esc(txt(f, "why"))) + lv("Trip time", esc(txt(f, "tripTzName")));
   if (t === "Overview" && type === "project") {
-    const songs = (fv(f, "songsShared") || []).map(s => s.split("|"));
-    return sec("Songs", `<span class="caps">${songs.length}</span>`) + (songs.length ? songs.map(([n, st]) => `<div class="row"><div class="t">${esc(n)}</div><div class="caps">${esc(st || "")}</div></div>`).join("") : `<div class="empty">No songs yet.</div>`) + roles();
+    const see = fv(f, "_theySee") || [], songs = (fv(f, "songsShared") || []).map(s => s.split("|"));
+    let h = sec("Overview") + lv("Kind", esc(txt(f, "kind"))) + lv("Stage", esc(txt(f, "status"))) + lv("Release", fv(f, "release") ? esc(fmt(fv(f, "release"))) : "");
+    if (see.includes("Songs and steps")) h += sec("Songs", `<span class="caps">${songs.length}</span>`) + (songs.length ? songs.map(([n, st]) => `<div class="row"><div class="t">${esc(n)}</div><div class="caps">${esc(st || "")}</div></div>`).join("") : `<div class="empty">No songs yet.</div>`);
+    return h + roles();
   }
   if (t === "Plan") return sec("Plan") + lv("When", esc([fv(f, "date") ? fmt(fv(f, "date")) : "", txt(f, "time")].filter(Boolean).join(" · "))) + lv("Where", esc(txt(f, "where"))) + who();
   if (t === "Ideas") return list("ideas", "Ideas", "+ Idea", [["title", "An idea (a place, food, something to do)"], ["source", "A link (optional)"]]);
