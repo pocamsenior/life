@@ -57,6 +57,7 @@
   </div>
 </main>
 <div id="signout" class="hide"></div>
+<script src="key.js"></script>
 <script src="https://cdn.apple-cloudkit.com/ck/2/cloudkit.js"></script>
 <script>
 "use strict";
@@ -64,11 +65,13 @@
 // Everything lives in the owner's iCloud (CloudKit sharing); this page keeps nothing of its own.
 // The link carries the web key and the share: #k=<web key>&s=<share id>&e=<production|development>
 const CONTAINER = "iCloud.com.pocamsenior.life";
-const P = Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
+// Short links: #<share>/<trip name>/<who shared it>; older links used #k=…&s=…&t=…
+const H = location.hash.slice(1);
+const P = H.includes("=") ? Object.fromEntries(new URLSearchParams(H)) : (() => { const [s, t, n] = H.split("/").map(x => { try { return decodeURIComponent(x || ""); } catch (e) { return x || ""; } }); return { s, t, n }; })();
 const STORE = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
 const share = (P.s || "").replace(/^.*\/share\//, "").replace(/#.*$/, "");
 const env = P.e || "production";
-const key = P.k || STORE("life.k");
+const key = (window.LIFE_KEY || "").trim() || P.k || STORE("life.k");
 if (P.k) STORE("life.k", P.k);
 const HUB = { trip: "#ffad87", project: "#ffc21a", plan: "#4c7dff" };
 const PEOPLE = ["#5edadb", "#e57fdd", "#8cda8f", "#deceff", "#e0e77d", "#ffadd2", "#aef2ff", "#80bdfb"];
@@ -88,7 +91,8 @@ let C, DB, zoneID, me = STORE("life.name") || "", state = { fields: {}, checks: 
 
 function fail(m) { $("#app").innerHTML = `<div class="center"><div class="err">${esc(m)}</div><div class="note">Ask whoever shared it to send the link again.</div></div>`; }
 
-if (!share || !key) fail("This link is missing part of it.");
+if (!key) fail("This page isn't set up yet (its web key is missing).");
+else if (!share) fail("This link is missing part of it.");
 else start();
 
 function start() {
@@ -99,7 +103,7 @@ function start() {
   C.setUpAuth().then(u => u ? ready() : askSignIn()).catch(e => fail("Couldn't reach iCloud: " + (e.reason || e.message || e)));
 }
 function askSignIn() {
-  $("#lead").innerHTML = P.t ? `<h1>${esc(P.t)}</h1>` : `<div class="sub">Shared with you</div>`;
+  $("#lead").innerHTML = (P.t ? `<h1>${esc(P.t)}</h1>` : `<h1>Shared with you</h1>`) + (P.n ? `<div class="sub">Shared by ${esc(P.n)}</div>` : "");
   if (P.y && HUB[P.y]) document.documentElement.style.setProperty("--c", HUB[P.y]);
   if (P.t) document.title = P.t;
   $("#signnote").textContent = "Sign in with your Apple ID to see it and add to it. Your name shows next to what you add. No app needed. No Apple ID? You can make one free with any email at appleid.apple.com.";
@@ -125,7 +129,7 @@ async function ready() {
         // the owner opening their own link: it's in their own iCloud, not shared with them
         DB = C.privateCloudDatabase; zoneID = { zoneName: P.z };
         STORE("life.zone." + share, JSON.stringify({ zoneID, own: true }));
-      } else throw new Error(why || "This share couldn't be opened.");
+      } else throw new Error(why ? why + " (If you shared this yourself, it's already in your Life app.)" : "This share couldn't be opened.");
     }
     if (!me) { try { const id = await C.fetchCurrentUserIdentity(); const n = id && id.nameComponents; if (n && n.givenName) { me = n.givenName; STORE("life.name", me); } } catch (e) { } }
     await pull();
@@ -191,7 +195,7 @@ function render() {
   if (!tabs.includes(tab)) tab = tabs[0];
   const all = Object.values(state.entries).flat();
   const fresh = all.filter(e => by(e) && by(e) !== me && (e._at || 0) > seen).length;
-  let h = `<div class="crumb">Shared with you</div><h1>${esc(title)}</h1><div class="sub">${esc(subline(type, f))}</div>`;
+  let h = `<div class="crumb">${P.n ? "Shared by " + esc(P.n) : "Shared with you"}</div><h1>${esc(title)}</h1><div class="sub">${esc(subline(type, f))}</div>`;
   h += `<div class="tabs">${tabs.map(t => `<span class="${t === tab ? "on" : ""}" data-tab="${esc(t)}">${esc(t)}</span>`).join("")}</div>`;
   if (fresh && seen) h += `<div class="new">${fresh} new since you last looked · <span class="caps act" data-seen>Seen</span></div>`;
   h += body(type, tab, f);
