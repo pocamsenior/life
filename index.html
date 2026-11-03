@@ -296,14 +296,15 @@ function lv(l, v) { return v ? `<div class="lv"><span class="caps">${esc(l)}</sp
 function sec(t, right = "") { return `<div class="sec"><b>${esc(t)}</b><span class="acts">${right}</span></div>`; }
 
 function body(type, t, f) {
-  if (t === "Overview" && type === "trip") return sec("Overview") + lv("When", esc(subline("trip", f))) + lv("Best time", esc(txt(f, "best"))) + lv("Estimate", f.cost ? "$" + esc(txt(f, "cost")) : "") + lv("Why", esc(txt(f, "why"))) + lv("Trip time", esc(txt(f, "tripTzName")));
+  const orEmpty = (h, what) => h || `<div class="empty">Nothing in ${what} yet.</div>`;
+  if (t === "Overview" && type === "trip") return sec("Overview") + orEmpty(lv("When", esc(subline("trip", f))) + lv("Best time", esc(txt(f, "best"))) + lv("Estimate", f.cost ? "$" + esc(txt(f, "cost")) : "") + lv("Why", esc(txt(f, "why"))) + lv("Trip time", esc(txt(f, "tripTzName"))), "the overview");
   if (t === "Overview" && type === "project") {
     const see = fv(f, "_theySee") || [], songs = (fv(f, "songsShared") || []).map(s => s.split("|"));
-    let h = sec("Overview") + lv("Kind", esc(txt(f, "kind"))) + lv("Stage", esc(txt(f, "status"))) + lv("Release", fv(f, "release") ? esc(fmt(fv(f, "release"))) : "");
+    let h = sec("Overview") + orEmpty(lv("Kind", esc(txt(f, "kind"))) + lv("Stage", esc(txt(f, "status"))) + lv("Release", fv(f, "release") ? esc(fmt(fv(f, "release"))) : ""), "the overview");
     if (see.includes("Songs and steps")) h += sec("Songs", `<span class="caps">${songs.length}</span>`) + (songs.length ? songs.map(([n, st]) => `<div class="row"><div><div class="t">${esc(n)}</div><div class="l">${esc(st || "No step yet")}</div></div></div>`).join("") : `<div class="empty">No songs yet.</div>`);
     return h + roles();
   }
-  if (t === "Plan") return sec("Plan") + lv("When", esc([fv(f, "date") ? fmt(fv(f, "date")) : "", txt(f, "time")].filter(Boolean).join(" · "))) + lv("Where", esc(txt(f, "where"))) + who();
+  if (t === "Plan") return sec("Plan") + orEmpty(lv("When", esc([fv(f, "date") ? fmt(fv(f, "date")) : "", txt(f, "time")].filter(Boolean).join(" · "))) + lv("Where", esc(txt(f, "where"))), "the plan") + who();
   if (t === "Ideas") return list("ideas", "Ideas", "+ Idea", [["title", "An idea (a place, food, something to do)"], ["source", "A link (optional)"]]);
   if (t === "Notes") return list("notes", "Notes", "+ Note", [["title", "A note"]]);
   if (t === "Songs to Consider") return list("consider", "Songs to Consider", "+ Suggest a song", [["title", "Song (and artist)"], ["why", "Why (optional)"]]);
