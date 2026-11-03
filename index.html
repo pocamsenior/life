@@ -382,7 +382,7 @@ function render() {
   document.documentElement.style.setProperty("--c", HUB[type] || "#ffad87");
   document.title = title;
   const tabs = type === "trip" ? ["Overview", "Ideas", ...(see.includes("Paths") ? ["Paths"] : []), ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Itinerary days") ? ["Itinerary"] : []), ...(see.includes("To-dos") ? ["To-dos"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Estimate") && can("estimate") ? ["Estimate"] : []), ...(see.includes("Places") ? ["Places"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
-    : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Tracklist") ? ["Tracklist"] : []), ...(see.includes("Listen") ? ["Listen"] : []), ...(see.includes("Cover options") ? ["Covers"] : []), ...(see.includes("References") ? ["References"] : []), ...(see.includes("Lyrics") ? ["Lyrics"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Release plan") ? ["Release Plan"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
+    : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Tracklist") ? ["Tracklist"] : []), ...(see.includes("Listen") ? ["Listen"] : []), ...(see.includes("Cover options") ? ["Covers"] : []), ...(see.includes("References") ? ["References"] : []), ...(see.includes("Lyrics") ? ["Lyrics"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Sessions") ? ["Sessions"] : []), ...(see.includes("Release plan") ? ["Release Plan"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
     : ["Plan", "Polls", ...(see.includes("Bring and Do") ? ["Bring and Do"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])];
   if (can("invite") && DB !== C.privateCloudDatabase) tabs.push("People");
   if (!tabs.includes(tab)) tab = tabs[0];
@@ -431,6 +431,7 @@ function body(type, t, f) {
   if (t === "References") return list("refs", "References", "+ Send a link", [["link", "A link (song, video, playlist)"], ["line", "Why this one (optional)"]]);
   if (t === "Lyrics") return lyrics(f);
   if (t === "Release Plan") return releasePlan(f);
+  if (t === "Sessions") { const ss = (fv(f, "_sessions") || []).map(x => x.split("␟")); return sec("Sessions", `<span class="caps">${ss.length}</span>`) + (ss.length ? ss.map(([t, d, w, g]) => `<div class="row"><div><div class="t">${esc(t)}</div><div class="l">${esc([d ? fmt(new Date(d)) : "No date yet", w, +g ? g + " going" : ""].filter(Boolean).join(" · "))}</div></div></div>`).join("") : `<div class="empty">No sessions yet.</div>`); }
   if (t === "Paths") return paths();
   if (t === "To-dos") return todos();
   if (t === "Estimate") return estimate(f);
@@ -482,6 +483,9 @@ function tracklist(f) {
   const ts = (fv(f, "_tracks") || []).map(x => x.split("␟"));
   let h = sec("Tracklist", `<span class="caps">${ts.length}</span>`);
   if (!ts.length) return h + `<div class="empty">No tracklist yet.</div>`;
+  if (can("comment")) h += `<div class="form" style="flex-direction:row;align-items:center"><input id="orderIn" placeholder="Suggest an order: track numbers, like 3, 1, 2, 4"><span class="btn" data-order="1">Suggest</span></div>`;
+  const os = E("orders");
+  if (os.length) h += os.map(o => `<div class="l" style="padding:2px 0">${nameHTML(by(o))} suggested ${esc((fv(o.f, "order") || []).join(", "))}</div>`).join("");
   let side = null;
   for (const [n, name, mark, sd, len, sid] of ts) {
     if (sd && sd !== side) { side = sd; h += `<div class="caps" style="padding-top:14px">Side ${esc(sd)}</div>`; }
@@ -686,7 +690,7 @@ function ask(title, detail, action, yes) {
 document.addEventListener("click", async ev => {
   const j = ev.target.closest("[data-join],[data-askagain]");
   if (j) { if (j.dataset.join) await askToJoin(); else showAsk(); return; }
-  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-moment],[data-seek],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave]");
+  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-order],[data-moment],[data-seek],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave]");
   if (!t) return;
   const d = t.dataset;
   if (d.tab) { tab = d.tab; STORE("life.tab", tab); render(); }
@@ -738,6 +742,7 @@ document.addEventListener("click", async ev => {
   else if (d.seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); STORE("life.seenIDs." + share, "[]"); render(); }
   else if (d.jump) { const [k, id] = d.jump.split("|"); markSeen(id); if (TABOF[k]) { tab = TABOF[k]; STORE("life.tab", tab); } if (k === "comments" || k === "votes") { const e = E(k).find(x => x.id === id); const p = e && txt(e.f, "parent"); if (p) open["c." + p] = true; } render(); }
   else if (d.allnew) { open.allNew = true; render(); }
+  else if (d.order) { if (!me) return askName(); const v = ($("#orderIn") || {}).value || ""; const nums = v.split(/[^0-9]+/).filter(Boolean); if (!nums.length) return; await save("orders", { title: "", date: now(), f: { order: { t: "l", v: nums } } }); }
   else if (d.seek) { const [b, at] = d.seek.split("|"); const a = document.getElementById("au-" + b); if (a) { a.currentTime = +at; a.play(); } }
   else if (d.moment) { if (!me) return askName(); const a = document.getElementById("au-" + d.moment), i = document.querySelector(`[data-mtext="${d.moment}"]`), v = i && i.value.trim(); if (!v) return; await save("moments", { title: v, date: now(), f: { parent: { t: "s", v: d.moment }, at: { t: "n", v: Math.round(a ? a.currentTime : 0) } } }); }
   else if (d.lyr) { open.lyr = open.lyr === d.lyr ? "" : d.lyr; render(); const i = $("#lyrText"); if (i) i.focus(); }
