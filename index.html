@@ -142,7 +142,14 @@ async function ready() {
       } else throw new Error(why ? why + " (If you shared this yourself, it's already in your Life app.)" : "This share couldn't be opened.");
     }
     if (!me) { try { const id = await C.fetchCurrentUserIdentity(); const n = id && id.nameComponents; if (n && n.givenName) { me = n.givenName; STORE("life.name", me); } } catch (e) { } }
-    await pull();
+    try { await pull(); }
+    catch (e) {
+      // you shared this yourself: it's in your own iCloud, not shared with you
+      if (!/owner/i.test(e.reason || e.message || String(e))) throw e;
+      DB = C.privateCloudDatabase; zoneID = { zoneName: zoneID.zoneName };
+      STORE("life.zone." + share, JSON.stringify({ zoneID, own: true }));
+      await pull();
+    }
     setInterval(pull, 60000);
   } catch (e) { STORE("life.zone." + share, ""); fail(e.reason || e.message || String(e)); }
 }
@@ -165,7 +172,7 @@ async function pull() {
   let token, more = true, n = 0;
   while (more && n++ < 20) {
     const r = await DB.fetchRecordZoneChanges([{ zoneID, syncToken: token }]);
-    if (r.hasErrors) throw new Error(r.errors[0].reason || r.errors[0].serverErrorCode);
+    if (r.hasErrors) throw new Error(r.errors[0].reason || r.errors[0].serverErrorCode || "");
     const z = r.zones[0] || {};
     (z.records || []).forEach(x => { if (!x.deleted) recs[x.recordName] = x; });
     token = z.syncToken; more = !!z.moreComing;
