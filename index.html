@@ -57,7 +57,7 @@
   </div>
 </main>
 <div id="signout" class="hide"></div>
-<script src="key.js"></script>
+<script src="/life/key.js"></script>
 <script src="https://cdn.apple-cloudkit.com/ck/2/cloudkit.js"></script>
 <script>
 "use strict";
@@ -69,7 +69,9 @@ const CONTAINER = "iCloud.com.pocamsenior.life";
 const H = location.hash.slice(1);
 const P = H.includes("=") ? Object.fromEntries(new URLSearchParams(H)) : (() => { const [s, t, n] = H.split("/").map(x => { try { return decodeURIComponent(x || ""); } catch (e) { return x || ""; } }); return { s, t, n }; })();
 const STORE = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
-const share = (P.s || "").replace(/^.*\/share\//, "").replace(/#.*$/, "");
+let share = (P.s || "").replace(/^.*\/share\//, "").replace(/#.*$/, "");
+// Shortest links: pocamsenior.github.io/life/trip-name (the name is looked up in the owner's public iCloud)
+const slug = decodeURIComponent(location.pathname.replace(/^\/life\/?/, "").replace(/\/+$/, "").replace(/\.html$/, "")).replace(/^(index|404)$/, "");
 const env = P.e || "production";
 const key = (window.LIFE_KEY || "").trim() || P.k || STORE("life.k");
 if (P.k) STORE("life.k", P.k);
@@ -92,7 +94,7 @@ let C, DB, zoneID, me = STORE("life.name") || "", state = { fields: {}, checks: 
 function fail(m) { $("#app").innerHTML = `<div class="center"><div class="err">${esc(m)}</div><div class="note">Ask whoever shared it to send the link again.</div></div>`; }
 
 if (!key) fail("This page isn't set up yet (its web key is missing).");
-else if (!share) fail("This link is missing part of it.");
+else if (!share && !slug) fail("This link is missing part of it.");
 else start();
 
 function start() {
@@ -100,7 +102,15 @@ function start() {
     apiTokenAuth: { apiToken: key, persist: true, signInButton: { id: "signin", theme: "white" }, signOutButton: { id: "signout", theme: "black" } } }] });
   C = CloudKit.getDefaultContainer();
   DB = C.sharedCloudDatabase;
-  C.setUpAuth().then(u => u ? ready() : askSignIn()).catch(e => fail("Couldn't reach iCloud: " + (e.reason || e.message || e)));
+  (slug && !share ? lookup() : Promise.resolve()).then(() => C.setUpAuth()).then(u => u ? ready() : askSignIn()).catch(e => fail("Couldn't reach iCloud: " + (e.reason || e.message || e)));
+}
+async function lookup() {
+  const r = await C.publicCloudDatabase.fetchRecords([{ recordName: "link." + slug.toLowerCase() }]);
+  const rec = r.records && r.records[0];
+  if (!rec || rec.serverErrorCode || !rec.fields || !rec.fields.guid) throw { reason: "This link isn't shared anymore, or the name is spelled differently." };
+  const v = k => rec.fields[k] ? rec.fields[k].value : "";
+  share = v("guid"); P.t = v("title"); P.n = v("sharer"); P.y = v("kind");
+  seen = +(STORE("life.seen." + share) || 0);
 }
 function askSignIn() {
   $("#lead").innerHTML = (P.t ? `<h1>${esc(P.t)}</h1>` : `<h1>Shared with you</h1>`) + (P.n ? `<div class="sub">Shared by ${esc(P.n)}</div>` : "");

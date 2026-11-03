@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Shared with you</title>
+<style>
+  :root{--page:#0b0b0d;--side:#0f0f12;--line:#1e1e22;--line2:#2a2a30;--ink:#f2f2f4;--soft:#c3c3c8;--muted:#8a8a92;--faint:#6a6a72;--red:#ff6b6b;--c:#ffad87}
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;background:var(--page);color:var(--ink);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Helvetica Neue",Helvetica,Arial,sans-serif}
+  main{max-width:760px;margin:0 auto;padding:calc(20px + env(safe-area-inset-top)) 16px 80px}
+  .crumb{font-size:12px;color:var(--muted)}
+  h1{font-size:28px;line-height:1.15;margin:4px 0 2px}
+  .sub{font-size:13px;color:var(--muted)}
+  .tabs{display:flex;flex-wrap:wrap;gap:4px 18px;border-bottom:1px solid var(--line2);margin:16px 0 4px}
+  .tabs span{font-weight:600;font-size:14px;color:var(--muted);padding:0 0 6px;cursor:pointer}
+  .tabs span.on{color:var(--c);border-bottom:2px solid var(--c)}
+  .sec{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 12px;border-bottom:1px solid var(--line2);padding:20px 0 6px}
+  .sec b{font-size:16px}
+  .caps{font:700 11px/1.3 -apple-system,Helvetica,sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);white-space:nowrap}
+  .act{color:var(--c);cursor:pointer}
+  .row{display:flex;gap:12px;justify-content:space-between;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--line)}
+  .row .t{font-weight:600}
+  .row .l{font-size:13px;color:var(--muted)}
+  .acts{display:flex;flex-wrap:wrap;gap:6px 14px;justify-content:flex-end;align-items:center}
+  .sq{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:2px;vertical-align:middle}
+  .lv{display:flex;gap:12px;padding:7px 0;border-bottom:1px solid var(--line)}
+  .lv .caps{width:110px;flex:none;white-space:normal;padding-top:3px}
+  .empty{color:var(--faint);font-size:13px;padding:10px 0}
+  .new{color:var(--c);font-size:13px;padding:10px 0 0}
+  input,textarea{width:100%;background:transparent;border:0;border-bottom:1px solid var(--line2);color:var(--ink);font:inherit;padding:8px 0;outline:none;border-radius:0}
+  input:focus,textarea:focus{border-bottom-color:var(--c)}
+  textarea{resize:vertical;min-height:40px}
+  .form{padding:8px 0 4px;display:flex;flex-direction:column;gap:8px}
+  .btn{display:inline-block;border:1px solid var(--line2);color:var(--ink);padding:8px 14px;border-radius:3px;font-size:13px;cursor:pointer;background:transparent}
+  .btn.fill{background:var(--ink);color:var(--page);font-weight:700;border-color:var(--ink)}
+  .thread{padding:4px 0 8px 14px}
+  .cmt{padding:6px 0;border-bottom:1px solid var(--line)}
+  .cmt .who{font:700 11px Helvetica,sans-serif;letter-spacing:.1em;text-transform:uppercase}
+  .cmt.reply{margin-left:18px}
+  .center{padding:60px 0 20px}
+  .note{color:var(--muted);font-size:13px;margin-top:14px;max-width:440px}
+  .choice{color:var(--soft);border-bottom:1px dotted var(--faint);cursor:pointer;margin-right:12px}
+  .choice.on{color:var(--c);font-weight:700;border-bottom:1px solid var(--c)}
+  .err{color:var(--red);font-size:13px;padding:8px 0}
+  #signin,#signout{margin-top:18px}
+  .hide{display:none}
+</style>
+</head>
+<body>
+<main id="app">
+  <div class="center">
+    <div class="sub" id="lead">Loading…</div>
+    <div id="signin"></div>
+    <div class="note" id="signnote"></div>
+  </div>
+</main>
+<div id="signout" class="hide"></div>
+<script src="/life/key.js"></script>
+<script src="https://cdn.apple-cloudkit.com/ck/2/cloudkit.js"></script>
+<script>
+"use strict";
+// Life · the page friends use for a shared trip, music project or plan (U171).
+// Everything lives in the owner's iCloud (CloudKit sharing); this page keeps nothing of its own.
+// The link carries the web key and the share: #k=<web key>&s=<share id>&e=<production|development>
+const CONTAINER = "iCloud.com.pocamsenior.life";
+// Short links: #<share>/<trip name>/<who shared it>; older links used #k=…&s=…&t=…
+const H = location.hash.slice(1);
+const P = H.includes("=") ? Object.fromEntries(new URLSearchParams(H)) : (() => { const [s, t, n] = H.split("/").map(x => { try { return decodeURIComponent(x || ""); } catch (e) { return x || ""; } }); return { s, t, n }; })();
+const STORE = (k, v) => { try { if (v === undefined) return localStorage.getItem(k); localStorage.setItem(k, v); } catch (e) { return null; } };
+let share = (P.s || "").replace(/^.*\/share\//, "").replace(/#.*$/, "");
+// Shortest links: pocamsenior.github.io/life/trip-name (the name is looked up in the owner's public iCloud)
+const slug = decodeURIComponent(location.pathname.replace(/^\/life\/?/, "").replace(/\/+$/, "").replace(/\.html$/, "")).replace(/^(index|404)$/, "");
+const env = P.e || "production";
+const key = (window.LIFE_KEY || "").trim() || P.k || STORE("life.k");
+if (P.k) STORE("life.k", P.k);
+const HUB = { trip: "#ffad87", project: "#ffc21a", plan: "#4c7dff" };
+const PEOPLE = ["#5edadb", "#e57fdd", "#8cda8f", "#deceff", "#e0e77d", "#ffadd2", "#aef2ff", "#80bdfb"];
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+function color(name) { let h = 5381; for (const ch of String(name).toLowerCase()) h = ((h << 5) + h + ch.charCodeAt(0)) | 0; return PEOPLE[Math.abs(h) % PEOPLE.length]; }
+const REF = 978307200; // Apple's dates count from 2001
+const toDate = v => v == null ? null : new Date((v + REF) * 1000);
+const fmt = d => d ? d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "";
+const fv = (f, k) => { const x = f && f[k]; if (!x) return ""; if (x.t === "l") return x.v; if (x.t === "d") return toDate(x.v); return x.v; };
+const txt = (f, k) => { const v = fv(f, k); return Array.isArray(v) ? v.join(", ") : (v instanceof Date ? fmt(v) : String(v ?? "")); };
+const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : Date.now().toString(36) + Math.random().toString(36).slice(2)).toUpperCase();
+const b64e = s => { const b = new TextEncoder().encode(s); let x = ""; b.forEach(c => x += String.fromCharCode(c)); return btoa(x); };
+const b64d = s => { const x = atob(s); const b = new Uint8Array(x.length); for (let i = 0; i < x.length; i++) b[i] = x.charCodeAt(i); return new TextDecoder().decode(b); };
+
+let C, DB, zoneID, me = STORE("life.name") || "", state = { fields: {}, checks: {}, entries: {}, recs: {} }, tab = STORE("life.tab") || "", open = {}, loaded = false, seen = +(STORE("life.seen." + share) || 0);
+
+function fail(m) { $("#app").innerHTML = `<div class="center"><div class="err">${esc(m)}</div><div class="note">Ask whoever shared it to send the link again.</div></div>`; }
+
+if (!key) fail("This page isn't set up yet (its web key is missing).");
+else if (!share && !slug) fail("This link is missing part of it.");
+else start();
+
+function start() {
+  CloudKit.configure({ containers: [{ containerIdentifier: CONTAINER, environment: env,
+    apiTokenAuth: { apiToken: key, persist: true, signInButton: { id: "signin", theme: "white" }, signOutButton: { id: "signout", theme: "black" } } }] });
+  C = CloudKit.getDefaultContainer();
+  DB = C.sharedCloudDatabase;
+  (slug && !share ? lookup() : Promise.resolve()).then(() => C.setUpAuth()).then(u => u ? ready() : askSignIn()).catch(e => fail("Couldn't reach iCloud: " + (e.reason || e.message || e)));
+}
+async function lookup() {
+  const r = await C.publicCloudDatabase.fetchRecords([{ recordName: "link." + slug.toLowerCase() }]);
+  const rec = r.records && r.records[0];
+  if (!rec || rec.serverErrorCode || !rec.fields || !rec.fields.guid) throw { reason: "This link isn't shared anymore, or the name is spelled differently." };
+  const v = k => rec.fields[k] ? rec.fields[k].value : "";
+  share = v("guid"); P.t = v("title"); P.n = v("sharer"); P.y = v("kind");
+  seen = +(STORE("life.seen." + share) || 0);
+}
+function askSignIn() {
+  $("#lead").innerHTML = (P.t ? `<h1>${esc(P.t)}</h1>` : `<h1>Shared with you</h1>`) + (P.n ? `<div class="sub">Shared by ${esc(P.n)}</div>` : "");
+  if (P.y && HUB[P.y]) document.documentElement.style.setProperty("--c", HUB[P.y]);
+  if (P.t) document.title = P.t;
+  $("#signnote").textContent = "Sign in with your Apple ID to see it and add to it. Your name shows next to what you add. No app needed. No Apple ID? You can make one free with any email at appleid.apple.com.";
+  C.whenUserSignsIn().then(ready).catch(e => fail(e.reason || e.message || String(e)));
+}
+async function ready() {
+  $("#app").innerHTML = `<div class="center"><div class="sub">Opening…</div></div>`;
+  try {
+    let z = STORE("life.zone." + share);
+    if (z) { const o = JSON.parse(z); zoneID = o.zoneID || o; if (o.own) DB = C.privateCloudDatabase; }
+    else {
+      let m = null, why = "";
+      try {
+        const r = await C.acceptShares([share]);
+        const res = (r && (r.results || r._results)) || [];
+        m = res.find(x => x && (x.zoneID || (x.share && x.share.zoneID)));
+        if (!m) why = (res[0] && (res[0].reason || res[0].serverErrorCode)) || "";
+      } catch (e) { why = e.reason || e.message || String(e); }
+      if (m) {
+        zoneID = m.zoneID || m.share.zoneID;
+        STORE("life.zone." + share, JSON.stringify({ zoneID }));
+      } else if (P.z || (zoneID = await ownZone())) {
+        // the owner opening their own link: it's in their own iCloud, not shared with them
+        DB = C.privateCloudDatabase; zoneID = P.z ? { zoneName: P.z } : zoneID;
+        STORE("life.zone." + share, JSON.stringify({ zoneID, own: true }));
+      } else throw new Error(why ? why + " (If you shared this yourself, it's already in your Life app.)" : "This share couldn't be opened.");
+    }
+    if (!me) { try { const id = await C.fetchCurrentUserIdentity(); const n = id && id.nameComponents; if (n && n.givenName) { me = n.givenName; STORE("life.name", me); } } catch (e) { } }
+    await pull();
+    setInterval(pull, 60000);
+  } catch (e) { STORE("life.zone." + share, ""); fail(e.reason || e.message || String(e)); }
+}
+
+// Your own share: find the zone in your iCloud whose share has this link.
+async function ownZone() {
+  try {
+    const db = C.privateCloudDatabase, r = await db.fetchAllRecordZones();
+    for (const z of (r.zones || []).filter(z => (z.zoneID.zoneName || "").startsWith("life-"))) {
+      const q = await db.fetchRecords([{ recordName: "cloudkit.zoneshare" }], { zoneID: z.zoneID });
+      const rec = q.records && q.records[0];
+      if (rec && JSON.stringify(rec).includes(share)) return z.zoneID;
+    }
+  } catch (e) { }
+  return null;
+}
+
+async function pull() {
+  const recs = {};
+  let token, more = true, n = 0;
+  while (more && n++ < 20) {
+    const r = await DB.fetchRecordZoneChanges([{ zoneID, syncToken: token }]);
+    if (r.hasErrors) throw new Error(r.errors[0].reason || r.errors[0].serverErrorCode);
+    const z = r.zones[0] || {};
+    (z.records || []).forEach(x => { if (!x.deleted) recs[x.recordName] = x; });
+    token = z.syncToken; more = !!z.moreComing;
+  }
+  const s = { fields: {}, checks: {}, entries: {}, recs };
+  for (const x of Object.values(recs)) {
+    if (x.recordType !== "LifeItem" || !x.fields || !x.fields.json) continue;
+    let data; try { data = JSON.parse(b64d(x.fields.json.value)); } catch (e) { continue; }
+    const kind = x.fields.kind && x.fields.kind.value, k = x.fields.key && x.fields.key.value;
+    if (kind === "fields") s.fields = data;
+    else if (kind === "checks") s.checks[k] = data;
+    else if (kind === "entry") { data._rn = x.recordName; data._tag = x.recordChangeTag; data._at = x.created && x.created.timestamp; (s.entries[k] = s.entries[k] || []).push(data); }
+  }
+  state = s; loaded = true;
+  render();
+}
+
+async function save(k, e) {
+  e.id = e.id || uuid(); e.f = e.f || {}; e.f.by = e.f.by || { t: "s", v: me };
+  const body = { id: e.id, title: e.title || "", line: e.line || "", kind: e.kind || "", f: e.f, files: [], links: e.links || [], from: e.from || "" };
+  if (e.date !== undefined) body.date = e.date;
+  const rec = { recordType: "LifeItem", recordName: e._rn || `${k}.${e.id}`, zoneID,
+    fields: { kind: { value: "entry" }, key: { value: k }, json: { value: b64e(JSON.stringify(body)), type: "BYTES" }, by: { value: e.f.by.v } } };
+  if (e._tag) rec.recordChangeTag = e._tag;
+  const r = await DB.saveRecords([rec], { zoneID });
+  if (r.hasErrors) { alertLine(r.errors[0].reason || "Couldn't save. Try again."); return; }
+  await pull();
+}
+async function remove(e) {
+  const r = await DB.deleteRecords([{ recordName: e._rn, recordChangeTag: e._tag, zoneID }], { zoneID });
+  if (r.hasErrors) { alertLine(r.errors[0].reason || "Couldn't remove it."); return; }
+  await pull();
+}
+function alertLine(m) { const d = document.createElement("div"); d.className = "err"; d.textContent = m; $("#app").prepend(d); setTimeout(() => d.remove(), 5000); }
+const now = () => Date.now() / 1000 - REF;
+const E = k => state.entries[k] || [];
+const by = e => (e.f && e.f.by && e.f.by.v) || "";
+const nameHTML = n => n ? `<span style="color:${n === me ? "var(--ink)" : color(n)}">${esc(n === me ? "You" : n)}</span>` : "";
+
+// ---------- rendering ----------
+function render() {
+  if (!loaded) return;
+  const f = state.fields, type = txt(f, "_type") || "trip", title = txt(f, "_title") || "Shared with you";
+  const see = fv(f, "_theySee") || [];
+  document.documentElement.style.setProperty("--c", HUB[type] || "#ffad87");
+  document.title = title;
+  const tabs = type === "trip" ? ["Overview", "Ideas", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Itinerary days") ? ["Itinerary"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
+    : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
+    : ["Plan", "Polls", ...(see.includes("Bring and Do") ? ["Bring and Do"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])];
+  if (!tabs.includes(tab)) tab = tabs[0];
+  const all = Object.values(state.entries).flat();
+  const fresh = all.filter(e => by(e) && by(e) !== me && (e._at || 0) > seen).length;
+  let h = `<div class="crumb">${P.n ? "Shared by " + esc(P.n) : "Shared with you"}</div><h1>${esc(title)}</h1><div class="sub">${esc(subline(type, f))}</div>`;
+  h += `<div class="tabs">${tabs.map(t => `<span class="${t === tab ? "on" : ""}" data-tab="${esc(t)}">${esc(t)}</span>`).join("")}</div>`;
+  if (fresh && seen) h += `<div class="new">${fresh} new since you last looked · <span class="caps act" data-seen>Seen</span></div>`;
+  h += body(type, tab, f);
+  h += `<div class="sec"><span class="caps">You are ${nameHTML(me) || "—"}</span><span class="caps act" data-name>${me ? "Change name" : "Add your name"}</span></div>`;
+  h += `<div class="note">Everything here is in the owner's iCloud. What you add shows in their Life app within a couple of minutes.</div>`;
+  $("#app").innerHTML = h;
+  if (!seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); }
+  if (!me) askName();
+}
+function subline(type, f) {
+  if (type === "trip") { const a = fv(f, "start"), b = fv(f, "end"); return [a ? fmt(a) + (b ? "–" + fmt(b) : "") : "Dates not set", txt(f, "state")].filter(Boolean).join(" · "); }
+  if (type === "project") return [txt(f, "kind"), txt(f, "status"), fv(f, "release") ? "Out " + fmt(fv(f, "release")) : ""].filter(Boolean).join(" · ");
+  return [txt(f, "kind"), fv(f, "date") ? fmt(fv(f, "date")) : "", txt(f, "where")].filter(Boolean).join(" · ");
+}
+function lv(l, v) { return v ? `<div class="lv"><span class="caps">${esc(l)}</span><span>${v}</span></div>` : ""; }
+function sec(t, right = "") { return `<div class="sec"><b>${esc(t)}</b><span class="acts">${right}</span></div>`; }
+
+function body(type, t, f) {
+  if (t === "Overview" && type === "trip") return sec("Overview") + lv("When", esc(subline("trip", f))) + lv("Best time", esc(txt(f, "best"))) + lv("Estimate", f.cost ? "$" + esc(txt(f, "cost")) : "") + lv("Why", esc(txt(f, "why"))) + lv("Trip time", esc(txt(f, "tripTzName")));
+  if (t === "Overview" && type === "project") {
+    const songs = (fv(f, "songsShared") || []).map(s => s.split("|"));
+    return sec("Songs", `<span class="caps">${songs.length}</span>`) + (songs.length ? songs.map(([n, st]) => `<div class="row"><div class="t">${esc(n)}</div><div class="caps">${esc(st || "")}</div></div>`).join("") : `<div class="empty">No songs yet.</div>`) + roles();
+  }
+  if (t === "Plan") return sec("Plan") + lv("When", esc([fv(f, "date") ? fmt(fv(f, "date")) : "", txt(f, "time")].filter(Boolean).join(" · "))) + lv("Where", esc(txt(f, "where"))) + who();
+  if (t === "Ideas") return list("ideas", "Ideas", "+ Idea", [["title", "An idea (a place, food, something to do)"], ["source", "A link (optional)"]]);
+  if (t === "Notes") return list("notes", "Notes", "+ Note", [["title", "A note"]]);
+  if (t === "Songs to Consider") return list("consider", "Songs to Consider", "+ Suggest a song", [["title", "Song (and artist)"], ["why", "Why (optional)"]]);
+  if (t === "Itinerary") { const ps = E("plans").slice().sort((a, b) => (a.date || 0) - (b.date || 0)); return sec("Itinerary") + (ps.length ? ps.map(p => `<div class="row"><div><div class="t">${esc(p.title)}</div><div class="l">${esc(p.line || "")}</div></div><div class="caps">${esc(fmt(toDate(p.date)))}</div></div>`).join("") : `<div class="empty">Nothing on the itinerary yet.</div>`); }
+  if (t === "Costs") { const cs = [...E("spent"), ...E("costs")]; return sec("Split Costs") + (cs.length ? cs.map(c => `<div class="row"><div><div class="t">${esc(c.title)}</div><div class="l">${esc(txt(c.f, "paidBy") ? "Paid by " + txt(c.f, "paidBy") : "")}</div></div><div>$${esc(txt(c.f, "amount"))}</div></div>`).join("") : `<div class="empty">No split costs.</div>`) + payments(); }
+  if (t === "Checklist" || t === "Bring and Do") { const cs = state.checks[t === "Checklist" ? "checklist" : "bring"] || []; return sec(t) + (cs.length ? cs.map(c => `<div class="row"><div class="t" style="color:${c.done ? "var(--faint)" : "var(--ink)"}">${c.done ? "✓ " : ""}${esc(c.text)}</div></div>`).join("") : `<div class="empty">Nothing yet.</div>`); }
+  if (t === "Polls") return polls();
+  return "";
+}
+function roles() { const r = E("roles"); return r.length ? sec("Roles") + r.map(e => lv(e.title, nameHTML(e.title) && esc(txt(e.f, "role")))).join("") : ""; }
+function payments() { const p = E("payments"); return p.length ? sec("Payments") + p.map(e => `<div class="row"><div class="l">${nameHTML(txt(e.f, "from"))} → ${nameHTML(txt(e.f, "to"))}</div><div>$${esc(txt(e.f, "amount"))}</div></div>`).join("") : ""; }
+
+function list(k, title, add, form) {
+  const es = E(k).slice().sort((a, b) => (a._at || 0) - (b._at || 0));
+  let h = sec(title, `<span class="caps">${es.length}</span><span class="caps act" data-add="${k}">${esc(add)}</span>`);
+  if (open["add." + k]) h += `<div class="form" data-form="${k}">${form.map(([n, p]) => `<input name="${n}" placeholder="${esc(p)}">`).join("")}<div><span class="btn fill" data-post="${k}">Add</span></div></div>`;
+  if (!es.length) h += `<div class="empty">Nothing yet. ${esc(add)} to start.</div>`;
+  for (const e of es) {
+    const votes = E("votes").filter(v => txt(v.f, "parent") === e.id), mine = votes.find(v => by(v) === me);
+    const cs = E("comments").filter(c => txt(c.f, "parent") === e.id);
+    const extra = [txt(e.f, "why"), txt(e.f, "source")].filter(Boolean).map(x => /^https?:/.test(x) ? `<a href="${esc(x)}" target="_blank" rel="noopener" style="color:var(--c)">↗ link</a>` : esc(x)).join(" · ");
+    h += `<div class="row"><div><div class="t">${esc(e.title || e.line)}</div><div class="l">${nameHTML(by(e)) || "Owner"}${extra ? " · " + extra : ""}</div></div>
+      <div class="acts"><span>${votes.map(v => `<span class="sq" style="background:${color(by(v))}"></span>`).join("")}</span>
+      <span class="caps act" data-vote="${e.id}" style="color:${mine ? "var(--c)" : "var(--muted)"}">${mine ? "Voted" : "+ Vote"}</span>
+      <span class="caps act" data-cmt="${e.id}">${cs.length ? cs.length + " comment" + (cs.length > 1 ? "s" : "") : "Comment"}</span>
+      ${by(e) === me ? `<span class="caps act" style="color:var(--red)" data-del="${k}|${e.id}">Remove</span>` : ""}</div></div>`;
+    if (open["c." + e.id]) h += thread(e.id, cs);
+  }
+  return h;
+}
+function thread(pid, cs) {
+  cs = cs.slice().sort((a, b) => (a.date || 0) - (b.date || 0));
+  const top = cs.filter(c => !txt(c.f, "reply"));
+  let h = `<div class="thread">`;
+  for (const c of top) {
+    h += `<div class="cmt"><span class="who" style="color:${color(by(c))}">${esc(by(c) === me ? "You" : by(c))}</span> <span class="caps">${esc(fmt(toDate(c.date)))}</span> <span class="caps act" data-reply="${pid}|${c.id}">Reply</span><div>${esc(c.title)}</div></div>`;
+    for (const r of cs.filter(x => txt(x.f, "reply") === c.id)) h += `<div class="cmt reply"><span class="who" style="color:${color(by(r))}">${esc(by(r) === me ? "You" : by(r))}</span><div>${esc(r.title)}</div></div>`;
+  }
+  const rt = open["r." + pid];
+  h += `<div class="form"><input data-ctext="${pid}" placeholder="${rt ? "Reply" : "Add a comment"}"><div><span class="btn" data-csend="${pid}">${rt ? "Reply" : "Comment"}</span>${rt ? ` <span class="caps act" data-noreply="${pid}">Not a reply</span>` : ""}</div></div></div>`;
+  return h;
+}
+function who() {
+  const ws = E("who"), mineW = ws.find(w => (w.title || "").toLowerCase() === me.toLowerCase() || by(w) === me);
+  const rs = mineW ? txt(mineW.f, "rsvp") : "";
+  let h = sec("Who", `<span class="caps">${ws.filter(w => txt(w.f, "rsvp") === "Going").length} going</span>`);
+  h += `<div class="lv"><span class="caps">You</span><span>${["Going", "Maybe", "Not going"].map(o => `<span class="choice ${rs === o ? "on" : ""}" data-rsvp="${o}">${o}</span>`).join("")}</span></div>`;
+  h += ws.filter(w => w !== mineW).map(w => `<div class="row"><div class="t">${nameHTML(w.title)}</div><div class="caps">${esc(txt(w.f, "rsvp") || "No reply")}</div></div>`).join("");
+  return h;
+}
+function polls() {
+  const ps = E("polls");
+  let h = sec("Polls", `<span class="caps">${ps.length}</span>`);
+  if (!ps.length) return h + `<div class="empty">No polls yet.</div>`;
+  for (const p of ps) {
+    const opts = String(txt(p.f, "options")).split("\n").map(s => s.trim()).filter(Boolean), picked = txt(p.f, "picked");
+    h += `<div class="row"><div class="t">${esc(p.title)}</div><div class="caps">${esc(picked ? "Picked: " + picked : p.kind || "")}</div></div>`;
+    for (const o of opts) {
+      const vs = E("pollVotes").filter(v => txt(v.f, "parent") === p.id && txt(v.f, "option") === o), mine = vs.find(v => by(v) === me);
+      const n = (+(p.f["v." + o] && p.f["v." + o].v) || 0) + vs.length;
+      h += `<div class="row" style="padding-left:14px"><div><div style="color:${o === picked ? "var(--c)" : "var(--ink)"};font-weight:${o === picked ? 700 : 400}">${esc(o)}</div><div class="l">${vs.map(v => nameHTML(by(v))).join(", ")}</div></div>
+        <div class="acts"><span class="caps">${n} vote${n === 1 ? "" : "s"}</span>${picked ? "" : `<span class="caps act" data-pv="${p.id}|${esc(o)}" style="color:${mine ? "var(--c)" : "var(--muted)"}">${mine ? "Voted" : "+ Vote"}</span>`}</div></div>`;
+    }
+  }
+  return h;
+}
+function askName() {
+  const n = prompt("Your name, so the others know what you added:", me || "");
+  if (n && n.trim()) { me = n.trim().slice(0, 40); STORE("life.name", me); render(); }
+}
+
+// ---------- clicks ----------
+document.addEventListener("click", async ev => {
+  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen]");
+  if (!t) return;
+  const d = t.dataset;
+  if (d.tab) { tab = d.tab; STORE("life.tab", tab); render(); }
+  else if (d.add) { open["add." + d.add] = !open["add." + d.add]; render(); const i = document.querySelector(`[data-form="${d.add}"] input`); if (i) i.focus(); }
+  else if (d.post) {
+    if (!me) return askName();
+    const box = document.querySelector(`[data-form="${d.post}"]`), vals = Object.fromEntries([...box.querySelectorAll("input")].map(i => [i.name, i.value.trim()]));
+    if (!vals.title) return;
+    const e = { title: vals.title, date: now(), f: {} };
+    if (vals.source) e.f.source = { t: "s", v: vals.source };
+    if (vals.why) e.f.why = { t: "s", v: vals.why };
+    open["add." + d.post] = false;
+    await save(d.post, e);
+  }
+  else if (d.vote) {
+    if (!me) return askName();
+    const mine = E("votes").find(v => txt(v.f, "parent") === d.vote && by(v) === me);
+    if (mine) await remove(mine); else await save("votes", { title: "Vote", date: now(), f: { parent: { t: "s", v: d.vote } } });
+  }
+  else if (d.cmt) { open["c." + d.cmt] = !open["c." + d.cmt]; render(); }
+  else if (d.reply) { const [p, c] = d.reply.split("|"); open["r." + p] = c; render(); const i = document.querySelector(`[data-ctext="${p}"]`); if (i) i.focus(); }
+  else if (d.noreply) { open["r." + d.noreply] = ""; render(); }
+  else if (d.csend) {
+    if (!me) return askName();
+    const p = d.csend, i = document.querySelector(`[data-ctext="${p}"]`), v = i && i.value.trim();
+    if (!v) return;
+    const e = { title: v, date: now(), f: { parent: { t: "s", v: p } } };
+    if (open["r." + p]) e.f.reply = { t: "s", v: open["r." + p] };
+    open["r." + p] = "";
+    await save("comments", e);
+  }
+  else if (d.del) { const [k, id] = d.del.split("|"); const e = E(k).find(x => x.id === id); if (e && confirm("Remove “" + (e.title || "this") + "”?")) await remove(e); }
+  else if (d.rsvp) {
+    if (!me) return askName();
+    const w = E("who").find(x => (x.title || "").toLowerCase() === me.toLowerCase() || by(x) === me);
+    const e = w ? Object.assign({}, w, { f: Object.assign({}, w.f) }) : { title: me, f: {} };
+    e.f.rsvp = { t: "s", v: d.rsvp };
+    await save("who", e);
+  }
+  else if (d.pv) {
+    if (!me) return askName();
+    const [p, o] = d.pv.split("|");
+    const mine = E("pollVotes").find(v => txt(v.f, "parent") === p && txt(v.f, "option") === o && by(v) === me);
+    if (mine) await remove(mine); else await save("pollVotes", { title: o, date: now(), f: { parent: { t: "s", v: p }, option: { t: "s", v: o } } });
+  }
+  else if (d.name) askName();
+  else if (d.seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); render(); }
+});
+document.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter") return;
+  const c = ev.target.dataset && ev.target.dataset.ctext; if (c) { document.querySelector(`[data-csend="${c}"]`).click(); return; }
+  const f = ev.target.closest && ev.target.closest("[data-form]"); if (f) document.querySelector(`[data-post="${f.dataset.form}"]`).click();
+});
+</script>
+</body>
+</html>
