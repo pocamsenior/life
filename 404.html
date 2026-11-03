@@ -41,6 +41,7 @@
   .cmt.reply{margin-left:18px}
   .center{padding:60px 0 20px}
   .note{color:var(--muted);font-size:13px;margin-top:14px;max-width:440px}
+  .note.wide{max-width:none}
   .choice{color:var(--soft);border-bottom:1px dotted var(--faint);cursor:pointer;margin-right:12px}
   .choice.on{color:var(--c);font-weight:700;border-bottom:1px solid var(--c)}
   .err{color:var(--red);font-size:13px;padding:8px 0}
@@ -230,7 +231,7 @@ function render() {
   if (fresh && seen) h += `<div class="new">${fresh} new since you last looked · <span class="caps act" data-seen>Seen</span></div>`;
   h += body(type, tab, f);
   h += `<div class="sec"><span class="caps">You are ${nameHTML(me) || "—"}</span><span class="caps act" data-name>${me ? "Change name" : "Add your name"}</span></div>`;
-  h += `<div class="note">Everything here is in the owner's iCloud. What you add shows in their Life app within a couple of minutes.</div>`;
+  h += `<div class="note wide">Everything here is in the owner's iCloud. What you add shows in their app within a couple of minutes.</div>`;
   $("#app").innerHTML = h;
   if (!seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); }
   if (!me) askName();
