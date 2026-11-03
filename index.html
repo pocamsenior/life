@@ -102,9 +102,92 @@ let C, DB, zoneID, me = STORE("life.name") || "", state = { fields: {}, checks: 
 
 function fail(m) { $("#app").innerHTML = `<div class="center"><div class="err">${esc(m)}</div><div class="note">Ask whoever shared it to send the link again.</div></div>`; }
 
+// U183 · a friend's own page: /life/share-sheet/<name-code>[/tab]
+const SHEET = (() => { const m = decodeURIComponent(location.pathname).replace(/\/+$/, "").match(/^\/life\/share-sheet\/([^/]+)(?:\/([^/]+))?$/); return m ? { code: m[1].toLowerCase(), tab: m[2] || "" } : null; })();
 if (!key) fail("This page isn't set up yet (its web key is missing).");
+else if (SHEET) sheetStart();
 else if (!share && !slug) fail("This link is missing part of it.");
 else start();
+
+// ---------- a friend's own page (U183) ----------
+let sheetRec = null, sheetTab = "";
+function sheetStart() {
+  CloudKit.configure({ containers: [{ containerIdentifier: CONTAINER, environment: env,
+    apiTokenAuth: { apiToken: key, persist: true, signInButton: { id: "signin", theme: "white" }, signOutButton: { id: "signout", theme: "black" } } }] });
+  C = CloudKit.getDefaultContainer();
+  pubGetC("sheet." + SHEET.code).then(rec => {
+    if (!rec) return fail("This link doesn't work anymore. Ask for a new one.");
+    sheetRec = rec;
+    const v = k => rec.fields[k] ? rec.fields[k].value : "";
+    document.title = "Shared with " + (v("name") || "you");
+    C.setUpAuth().then(u => u ? sheetReady() : sheetSignIn()).catch(e => fail("Couldn't reach iCloud: " + (e.reason || e.message || e)));
+  }).catch(e => fail("Couldn't reach iCloud: " + (e.reason || e.message || e)));
+}
+async function pubGetC(name) { const r = await C.publicCloudDatabase.fetchRecords([{ recordName: name }]); const x = r.records && r.records[0]; return x && !x.serverErrorCode ? x : null; }
+function sheetSignIn() {
+  const v = k => sheetRec.fields[k] ? sheetRec.fields[k].value : "";
+  $("#lead").innerHTML = `<h1>Shared with ${esc(v("name") || "you")}</h1><div class="sub">From ${esc(v("owner") || "a friend")}</div>`;
+  $("#signnote").textContent = "Sign in with your Apple ID to see everything shared with you. The first Apple ID to sign in here makes this link yours.";
+  C.whenUserSignsIn().then(sheetReady).catch(e => fail(e.reason || e.message || String(e)));
+}
+async function sheetReady() {
+  try { const id = await C.fetchCurrentUserIdentity(); myID = (id && id.userRecordName) || ""; const n = id && id.nameComponents; if (!me && n && n.givenName) { me = n.givenName; STORE("life.name", me); } } catch (e) { }
+  const v = k => sheetRec.fields[k] ? sheetRec.fields[k].value : "";
+  const owner = v("uid");
+  if (owner && owner !== myID) {
+    try { await C.publicCloudDatabase.saveRecords([{ recordType: "SheetClaim", recordName: "try." + SHEET.code, fields: { code: { value: SHEET.code }, uid: { value: myID }, name: { value: me }, status: { value: "try" } } }]); } catch (e) { }
+    $("#app").innerHTML = `<div class="center"><h1>This link is someone else's</h1><div class="note">Nothing of theirs shows here. Ask ${esc(v("owner") || "the person who shares with you")} for your own link.</div></div>`;
+    return;
+  }
+  if (!owner) {
+    // the first sign-in makes it yours (Life links you to your contact on its next sync)
+    const mine = await pubGetC("claim." + SHEET.code);
+    if (!mine) { try { await C.publicCloudDatabase.saveRecords([{ recordType: "SheetClaim", recordName: "claim." + SHEET.code, fields: { code: { value: SHEET.code }, uid: { value: myID }, name: { value: me }, status: { value: "claim" } } }]); } catch (e) { } }
+    else if (mine.fields.uid && mine.fields.uid.value !== myID) { $("#app").innerHTML = `<div class="center"><h1>This link is someone else's</h1><div class="note">Ask ${esc(v("owner") || "them")} for your own link.</div></div>`; return; }
+  }
+  sheetRender();
+  setInterval(async () => { const r = await pubGetC("sheet." + SHEET.code).catch(() => null); if (r) { sheetRec = r; sheetRender(); } }, 60000);
+}
+function sheetRender() {
+  const v = k => sheetRec.fields[k] ? sheetRec.fields[k].value : "";
+  let items = []; try { items = JSON.parse(v("items") || "[]"); } catch (e) { }
+  const hidden = new Set(JSON.parse(STORE("life.pass." + SHEET.code) || "[]"));
+  items = items.filter(x => !hidden.has(x.g));
+  const invited = items.filter(x => x.st === "invited");
+  const kinds = { Trips: "trip", Music: "project", Plans: "plan" };
+  const tabs = [...(invited.length ? ["Invited"] : []), ...Object.keys(kinds).filter(t => items.some(x => x.k === kinds[t] && x.st === "in"))];
+  sheetTab = SHEET.tab ? SHEET.tab.charAt(0).toUpperCase() + SHEET.tab.slice(1) : (sheetTab || STORE("life.sheetTab." + SHEET.code) || tabs[0]);
+  if (!tabs.includes(sheetTab)) sheetTab = tabs[0];
+  document.documentElement.style.setProperty("--c", sheetTab === "Music" ? HUB.project : sheetTab === "Plans" ? HUB.plan : HUB.trip);
+  const only = Object.keys(kinds).filter(t => tabs.includes(t));
+  let h = `<div class="crumb">From ${esc(v("owner") || "a friend")}</div><h1>Shared with ${esc(v("name") || "you")}</h1>`;
+  if (only.length === 1 && !invited.length) h += `<div class="sub">${only[0]} only</div>`;
+  if (tabs.length > 1) h += `<div class="tabs">${tabs.map(t => `<span class="${t === sheetTab ? "on" : ""}" data-stab="${t}">${t}${t === "Invited" ? " " + invited.length : ""}</span>`).join("")}</div>`;
+  if (!items.length) h += `<div class="empty" style="padding-top:20px">Nothing shared with you yet. Things show here as soon as they're shared.</div>`;
+  const row = x => {
+    const link = x.s && x.s.includes("/") ? "/life/" + x.s : "/life/#" + x.g;
+    const bits = [x.when, x.r, x.todo ? x.todo + " to-do" + (x.todo === "1" ? "" : "s") : ""].filter(Boolean).join(" · ");
+    if (x.st === "invited") return `<div class="row"><div><div class="t">${esc(x.t)}</div><div class="l">${esc({ trip: "Trip", project: "Music project", plan: "Plan" }[x.k] || "")}${bits ? " · " + esc(bits) : ""}</div></div><div class="acts"><a class="btn fill" href="${esc(link)}" style="text-decoration:none">Join</a><span class="caps act" style="color:var(--muted)" data-pass="${esc(x.g)}">Not for me</span></div></div>`;
+    return `<a href="${esc(link)}" style="color:inherit;text-decoration:none"><div class="row"><div><div class="t">${esc(x.t)}</div><div class="l">${esc(bits)}</div></div><div class="caps">Open ›</div></div></a>`;
+  };
+  if (sheetTab === "Invited") h += sec("Invited") + invited.map(row).join("") + `<div class="note">Join opens it right away: ${esc(v("owner") || "they")} picked you.</div>`;
+  else if (sheetTab) {
+    const list = items.filter(x => x.k === kinds[sheetTab] && x.st === "in"), now_ = list.filter(x => !x.past), past = list.filter(x => x.past);
+    h += now_.map(row).join("") || `<div class="empty">Nothing here now.</div>`;
+    if (past.length) h += sec("Past") + past.map(row).join("");
+  }
+  h += `<div class="note wide" style="margin-top:28px">Keep this page: add it to your Home Screen (Share › Add to Home Screen) and everything shared with you is one tap away.</div>`;
+  $("#app").innerHTML = h;
+}
+document.addEventListener("click", async ev => {
+  const t = ev.target.closest("[data-stab],[data-pass]"); if (!t) return;
+  if (t.dataset.stab) { sheetTab = t.dataset.stab; STORE("life.sheetTab." + SHEET.code, sheetTab); history.replaceState(null, "", "/life/share-sheet/" + SHEET.code + "/" + sheetTab.toLowerCase()); SHEET.tab = ""; sheetRender(); }
+  else if (t.dataset.pass) {
+    const g = t.dataset.pass;
+    try { await C.publicCloudDatabase.saveRecords([{ recordType: "SheetClaim", recordName: "pass." + SHEET.code + "." + g, fields: { code: { value: SHEET.code }, uid: { value: myID }, name: { value: me }, status: { value: "pass" } } }]); } catch (e) { }
+    const s = new Set(JSON.parse(STORE("life.pass." + SHEET.code) || "[]")); s.add(g); STORE("life.pass." + SHEET.code, JSON.stringify([...s])); sheetRender();
+  }
+});
 
 function start() {
   CloudKit.configure({ containers: [{ containerIdentifier: CONTAINER, environment: env,
@@ -295,6 +378,7 @@ function render() {
   const tabs = type === "trip" ? ["Overview", "Ideas", ...(see.includes("Paths") ? ["Paths"] : []), ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Itinerary days") ? ["Itinerary"] : []), ...(see.includes("To-dos") ? ["To-dos"] : []), ...(see.includes("Estimate") && can("estimate") ? ["Estimate"] : []), ...(see.includes("Places") ? ["Places"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
     : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
     : ["Plan", "Polls", ...(see.includes("Bring and Do") ? ["Bring and Do"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])];
+  if (can("invite") && DB !== C.privateCloudDatabase) tabs.push("People");
   if (!tabs.includes(tab)) tab = tabs[0];
   let h = `<div class="crumb">${P.n ? "Shared by " + esc(P.n) : "Shared with you"}</div><h1>${esc(title)}</h1><div class="sub">${esc(subline(type, f))}</div>`;
   h += `<div class="tabs">${tabs.map(t => `<span class="${t === tab ? "on" : ""}" data-tab="${esc(t)}">${esc(t)}</span>`).join("")}</div>`;
@@ -334,6 +418,7 @@ function body(type, t, f) {
   }
   if (t === "Plan") return sec("Plan") + orEmpty(lv("When", esc([fv(f, "date") ? fmt(fv(f, "date")) : "", txt(f, "time")].filter(Boolean).join(" · "))) + lv("Where", esc(txt(f, "where"))), "the plan") + who();
   if (t === "Ideas") return list("ideas", "Ideas", "+ Idea", [["title", "An idea (a place, food, something to do)"], ["source", "A link (optional)"]]);
+  if (t === "People") return peopleTab();
   if (t === "Paths") return paths();
   if (t === "To-dos") return todos();
   if (t === "Estimate") return estimate(f);
@@ -345,6 +430,23 @@ function body(type, t, f) {
   if (t === "Checklist" || t === "Bring and Do") { const cs = state.checks[t === "Checklist" ? "checklist" : "bring"] || []; return sec(t) + (cs.length ? cs.map(c => `<div class="row"><div class="t" style="color:${c.done ? "var(--faint)" : "var(--ink)"}">${c.done ? "✓ " : ""}${esc(c.text)}</div></div>`).join("") : `<div class="empty">Nothing yet.</div>`); }
   if (t === "Polls") return polls();
   return "";
+}
+// U185 · a co-planner's People tab: everyone with their role, Asking to Join (Let in · Turn down), Invite with the share's link
+let reqs = null;
+function peopleTab() {
+  if (reqs === null) { reqs = []; C.publicCloudDatabase.performQuery({ recordType: "JoinRequest", filterBy: [{ fieldName: "guid", comparator: "EQUALS", fieldValue: { value: share } }] }).then(r => { reqs = (r.records || []).map(x => ({ uid: x.fields.userID.value, name: x.fields.name.value })); render(); }).catch(() => { }); }
+  const people = E("roles"), handled = new Set(E("letins").map(e => txt(e.f, "uid")));
+  let h = sec("People", `<span class="caps">${people.length}</span>`);
+  h += people.map(p => `<div class="row"><div class="t">${nameHTML(p.title)}</div><div class="caps" style="color:var(--c)">${esc(txt(p.f, "role"))}</div></div>`).join("") || `<div class="empty">Nobody listed yet.</div>`;
+  const asking = (reqs || []).filter(r => !handled.has(r.uid) && !people.some(p => txt(p.f, "uid") === r.uid));
+  if (asking.length) {
+    h += sec("Asking to Join", `<span class="caps">${asking.length}</span>`);
+    h += asking.map(r => `<div class="row"><div class="t">${esc(r.name)}</div><div class="acts"><span class="caps act" data-letin="${esc(r.uid)}|${esc(r.name)}|in">Let in</span><span class="caps act" style="color:var(--muted)" data-letin="${esc(r.uid)}|${esc(r.name)}|no">Turn down</span></div></div>`).join("");
+  }
+  const link = location.href.split("#")[0];
+  h += sec("Invite") + `<div class="note wide">Send the link; people sign in and Ask to join, then you or ${esc(P.n || "the owner")} let them in as ${esc(txt(state.fields, "_defaultRole") || "a guest")}.</div>
+    <div style="padding:10px 0;display:flex;gap:16px"><span class="caps act" data-copylink="${esc(link)}">Copy link</span>${navigator.share ? `<span class="caps act" data-sharelink="${esc(link)}">Share…</span>` : ""}</div>`;
+  return h;
 }
 // U174 · paths as rough routes; friends vote and comment, the most-voted is the Group pick
 function paths() {
@@ -495,7 +597,7 @@ function ask(title, detail, action, yes) {
 document.addEventListener("click", async ev => {
   const j = ev.target.closest("[data-join],[data-askagain]");
   if (j) { if (j.dataset.join) await askToJoin(); else showAsk(); return; }
-  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-tmine],[data-tick],[data-takeon],[data-leave]");
+  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave]");
   if (!t) return;
   const d = t.dataset;
   if (d.tab) { tab = d.tab; STORE("life.tab", tab); render(); }
@@ -545,6 +647,9 @@ document.addEventListener("click", async ev => {
   else if (d.seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); STORE("life.seenIDs." + share, "[]"); render(); }
   else if (d.jump) { const [k, id] = d.jump.split("|"); markSeen(id); if (TABOF[k]) { tab = TABOF[k]; STORE("life.tab", tab); } if (k === "comments" || k === "votes") { const e = E(k).find(x => x.id === id); const p = e && txt(e.f, "parent"); if (p) open["c." + p] = true; } render(); }
   else if (d.allnew) { open.allNew = true; render(); }
+  else if (d.letin) { const [uid, name, st] = d.letin.split("|"); await save("letins", { title: name, date: now(), f: { uid: { t: "s", v: uid }, answer: { t: "s", v: st } } }); }
+  else if (d.copylink) { try { await navigator.clipboard.writeText(d.copylink); alertLine("Copied."); } catch (e) { } }
+  else if (d.sharelink) { try { await navigator.share({ url: d.sharelink, title: document.title }); } catch (e) { } }
   else if (d.tmine) { open.todosMine = d.tmine === "1"; render(); }
   else if (d.tick) { const e = E("todos").find(x => x.id === d.tick); if (e) { const x = Object.assign({}, e, { f: Object.assign({}, e.f) }); x.f.done = { t: "b", v: !fv(e.f, "done") }; await save("todos", x); } }
   else if (d.takeon) { if (!me) return askName(); const e = E("todos").find(x => x.id === d.takeon); if (e) { const x = Object.assign({}, e, { f: Object.assign({}, e.f) }); x.f.who = { t: "s", v: me }; await save("todos", x); } }
