@@ -117,7 +117,7 @@ async function lookup() {
   const rec = r.records && r.records[0];
   if (!rec || rec.serverErrorCode || !rec.fields || !rec.fields.guid) throw { reason: "This link isn't shared anymore, or the name is spelled differently." };
   const v = k => rec.fields[k] ? rec.fields[k].value : "";
-  share = v("guid"); P.t = v("title"); P.n = v("sharer"); P.y = v("kind");
+  share = v("guid"); P.t = v("title"); P.n = v("sharer"); P.y = v("kind"); P.m = v("mode");
   seen = +(STORE("life.seen." + share) || 0);
 }
 function askSignIn() {
@@ -127,8 +127,10 @@ function askSignIn() {
   $("#signnote").textContent = "Sign in with your Apple ID to see it and add to it. Your name shows next to what you add. No app needed. No Apple ID? You can make one free with any email at appleid.apple.com.";
   C.whenUserSignsIn().then(ready).catch(e => fail(e.reason || e.message || String(e)));
 }
+let myID = "";
 async function ready() {
   $("#app").innerHTML = `<div class="center"><div class="sub">Opening…</div></div>`;
+  try { const id = await C.fetchCurrentUserIdentity(); myID = (id && id.userRecordName) || ""; const n = id && id.nameComponents; if (!me && n && n.givenName) { me = n.givenName; STORE("life.name", me); } } catch (e) { }
   try {
     let z = STORE("life.zone." + share);
     if (z) { const o = JSON.parse(z); zoneID = o.zoneID || o; if (o.own) DB = C.privateCloudDatabase; }
@@ -147,19 +149,58 @@ async function ready() {
         // the owner opening their own link: it's in their own iCloud, not shared with them
         DB = C.privateCloudDatabase; zoneID = P.z ? { zoneName: P.z } : zoneID;
         STORE("life.zone." + share, JSON.stringify({ zoneID, own: true }));
-      } else throw new Error(why ? why + " (If you shared this yourself, it's already in your Life app.)" : "This share couldn't be opened.");
+      } else return joinFlow();
     }
-    if (!me) { try { const id = await C.fetchCurrentUserIdentity(); const n = id && id.nameComponents; if (n && n.givenName) { me = n.givenName; STORE("life.name", me); } } catch (e) { } }
     try { await pull(); }
     catch (e) {
-      // you shared this yourself: it's in your own iCloud, not shared with you
-      if (!/owner/i.test(e.reason || e.message || String(e))) throw e;
-      DB = C.privateCloudDatabase; zoneID = { zoneName: zoneID.zoneName };
-      STORE("life.zone." + share, JSON.stringify({ zoneID, own: true }));
-      await pull();
+      const why = e.reason || e.message || String(e);
+      if (/owner/i.test(why)) {
+        // you shared this yourself: it's in your own iCloud, not shared with you
+        DB = C.privateCloudDatabase; zoneID = { zoneName: zoneID.zoneName };
+        STORE("life.zone." + share, JSON.stringify({ zoneID, own: true }));
+        await pull();
+      } else { STORE("life.zone." + share, ""); return joinFlow(); }   // no longer let in
     }
-    setInterval(pull, 60000);
+    if (!polling) polling = setInterval(() => pull().catch(() => { STORE("life.zone." + share, ""); clearInterval(polling); polling = null; joinFlow(); }), 60000);
   } catch (e) { STORE("life.zone." + share, ""); fail(e.reason || e.message || String(e)); }
+}
+
+// ---------- asking to join (when the owner lets people in) ----------
+let polling = null, waiting = null;
+async function pubGet(name) { try { const r = await C.publicCloudDatabase.fetchRecords([{ recordName: name }]); const x = r.records && r.records[0]; return x && !x.serverErrorCode ? x : null; } catch (e) { return null; } }
+const stamp = x => (x && x.modified && x.modified.timestamp) || 0;
+async function joinFlow() {
+  clearTimeout(waiting);
+  const [req, ans] = await Promise.all([pubGet(`join.${share}.${myID}`), pubGet(`answer.${share}.${myID}`)]);
+  const status = ans && ans.fields && ans.fields.status && ans.fields.status.value;
+  const head = `<div class="center">${P.t ? `<h1>${esc(P.t)}</h1>` : `<h1>${esc(document.title)}</h1>`}${P.n ? `<div class="sub">Shared by ${esc(P.n)}</div>` : ""}`;
+  if (ans && (status === "no" || status === "removed") && (!req || stamp(ans) >= stamp(req))) {
+    $("#app").innerHTML = head + `<div class="note">This ${what()} isn't open to you.</div><div style="margin-top:16px"><span class="btn" data-askagain="1">Ask again</span></div></div>`;
+    return;
+  }
+  if (req && (!ans || stamp(req) > stamp(ans))) {
+    $("#app").innerHTML = head + `<div class="new" style="padding-top:18px">Asked to join · waiting for ${esc(P.n || "the owner")}</div><div class="note">Keep this page open or come back to the link later; it opens by itself once you're in.</div></div>`;
+    waiting = setTimeout(async () => { try { const r = await C.acceptShares([share]); const res = (r && (r.results || r._results)) || []; const m = res.find(x => x && (x.zoneID || (x.share && x.share.zoneID))); if (m) { zoneID = m.zoneID || m.share.zoneID; DB = C.sharedCloudDatabase; STORE("life.zone." + share, JSON.stringify({ zoneID })); return ready(); } } catch (e) { } joinFlow(); }, 20000);
+    return;
+  }
+  $("#app").innerHTML = head + `<div class="form" style="max-width:360px;margin-top:22px"><span class="caps">Your name</span><input id="joinName" placeholder="The name you go by" value="${esc(me)}"><div><span class="btn fill" data-join="1">Ask to join</span></div></div>
+    <div class="note">${esc(P.n || "The owner")} lets people in. You'll see the ${what()} here once they do.</div></div>`;
+}
+function showAsk() {
+  const head = `<div class="center">${P.t ? `<h1>${esc(P.t)}</h1>` : ""}${P.n ? `<div class="sub">Shared by ${esc(P.n)}</div>` : ""}`;
+  $("#app").innerHTML = head + `<div class="form" style="max-width:360px;margin-top:22px"><span class="caps">Your name</span><input id="joinName" placeholder="The name you go by" value="${esc(me)}"><div><span class="btn fill" data-join="1">Ask to join</span></div></div></div>`;
+}
+const what = () => ({ trip: "trip", project: "project", plan: "plan" }[P.y] || "share");
+async function askToJoin() {
+  const n = ($("#joinName") && $("#joinName").value.trim()) || me;
+  if (!n) { $("#joinName").focus(); return; }
+  me = n.slice(0, 40); STORE("life.name", me);
+  const name = `join.${share}.${myID}`, old = await pubGet(name);
+  const rec = { recordType: "JoinRequest", recordName: name, fields: { guid: { value: share }, userID: { value: myID }, name: { value: me } } };
+  if (old) rec.recordChangeTag = old.recordChangeTag;
+  const r = await C.publicCloudDatabase.saveRecords([rec]);
+  if (r.hasErrors) { alertLine(r.errors[0].reason || "Couldn't send. Try again."); return; }
+  joinFlow();
 }
 
 // Your own share: find the zone in your iCloud whose share has this link.
@@ -200,6 +241,8 @@ async function pull() {
 
 async function save(k, e) {
   e.id = e.id || uuid(); e.f = e.f || {}; e.f.by = e.f.by || { t: "s", v: me };
+  // lets the owner know it's you whatever name you use (not on your own share)
+  if (myID && DB !== C.privateCloudDatabase && !e.f.byID) e.f.byID = { t: "s", v: myID };
   const body = { id: e.id, title: e.title || "", line: e.line || "", kind: e.kind || "", f: e.f, files: [], links: e.links || [], from: e.from || "" };
   if (e.date !== undefined) body.date = e.date;
   const rec = { recordType: "LifeItem", recordName: e._rn || `${k}.${e.id}`, zoneID,
@@ -217,7 +260,7 @@ async function remove(e) {
 function alertLine(m) { const d = document.createElement("div"); d.className = "err"; d.textContent = m; $("#app").prepend(d); setTimeout(() => d.remove(), 5000); }
 const now = () => Date.now() / 1000 - REF;
 const E = k => state.entries[k] || [];
-const by = e => (e.f && e.f.by && e.f.by.v) || "";
+const by = e => (e.f && e.f.byID && e.f.byID.v === myID && myID) ? me : ((e.f && e.f.by && e.f.by.v) || "");
 const nameHTML = n => n ? `<span style="color:${n === me ? "var(--ink)" : color(n)}">${esc(n === me ? "You" : n)}</span>` : "";
 
 // ---------- rendering ----------
@@ -351,6 +394,8 @@ function ask(title, detail, action, yes) {
 
 // ---------- clicks ----------
 document.addEventListener("click", async ev => {
+  const j = ev.target.closest("[data-join],[data-askagain]");
+  if (j) { if (j.dataset.join) await askToJoin(); else showAsk(); return; }
   const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen]");
   if (!t) return;
   const d = t.dataset;
