@@ -280,8 +280,9 @@ function render() {
   h += `<div class="tabs">${tabs.map(t => `<span class="${t === tab ? "on" : ""}" data-tab="${esc(t)}">${esc(t)}</span>`).join("")}</div>`;
   if (fresh && seen) h += `<div class="new">${fresh} new since you last looked · <span class="caps act" data-seen="1">Seen</span></div>`;
   h += body(type, tab, f);
-  h += `<div class="sec"><span class="caps">You are ${nameHTML(me) || "—"}</span><span class="caps act" data-name="1">${me ? "Change name" : "Add your name"}</span></div>`;
-  h += `<div class="note wide">Everything here is in the owner's iCloud. What you add shows in their app within a couple of minutes.</div>`;
+  const own = DB === C.privateCloudDatabase;
+  h += `<div class="sec"><span class="caps">${own ? "Your name here" : "You go by"} <span style="color:var(--ink)">${esc(me || "—")}</span></span><span class="caps act" data-name="1">${me ? "Change name" : "Add your name"}</span></div>`;
+  h += `<div class="note wide">${own ? "This is your own share, as your friends see it. What you add here also shows in Life." : "Everything here is in the owner's iCloud. What you add shows in their app within a couple of minutes."}</div>`;
   $("#app").innerHTML = h;
   if (!seen) { seen = Date.now(); STORE("life.seen." + share, String(seen)); }
   if (!me && !$("#veil")) askName();
