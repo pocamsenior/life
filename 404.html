@@ -84,7 +84,7 @@ const slug = (() => { const m = decodeURIComponent(location.pathname).replace(/\
 const env = P.e || "production";
 const key = (window.LIFE_KEY || "").trim() || P.k || STORE("life.k");
 if (P.k) STORE("life.k", P.k);
-const HUB = { trip: "#ffad87", project: "#ffc21a", plan: "#4c7dff", set: "#ffc21a" };
+const HUB = { trip: "#ff9a3c", project: "#ffc21a", plan: "#ffc8a0", set: "#ffc21a" };   // Life 2 · Spring colors
 const PEOPLE = ["#5edadb", "#e57fdd", "#8cda8f", "#deceff", "#e0e77d", "#ffadd2", "#aef2ff", "#80bdfb"];
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -352,7 +352,9 @@ function alertLine(m) { const d = document.createElement("div"); d.className = "
 const now = () => Date.now() / 1000 - REF;
 const E = k => state.entries[k] || [];
 const by = e => (e.f && e.f.byID && e.f.byID.v === myID && myID) ? me : ((e.f && e.f.by && e.f.by.v) || "");
-const nameHTML = n => n ? `<span style="color:${n === me ? "var(--ink)" : color(n)}">${esc(n === me ? "You" : n)}</span>` : "";
+// U245 · a full name that's you ("Maya Lopez" when you go by Maya) reads You too
+const isMe = n => n === me || (loaded && typeof canon === "function" && canon(n) === meName());
+const nameHTML = n => n ? `<span style="color:${isMe(n) ? "var(--ink)" : color(n)}">${esc(isMe(n) ? "You" : n)}</span>` : "";
 // U184 · roles: what this person's role can do (your own share can do everything)
 function myRole() { const r = E("roles").find(e => txt(e.f, "uid") === myID && myID); return r ? txt(r.f, "role") : (txt(state.fields, "_defaultRole") || ""); }
 function can(p) {
@@ -369,7 +371,7 @@ const PLACE = { ideas: "Ideas", notes: "Notes", paths: "Paths", todos: "To-dos",
 const TABOF = { ideas: "Ideas", notes: "Notes", paths: "Paths", todos: "To-dos", consider: "Songs to Consider", polls: "Polls", pollVotes: "Polls", plans: "Itinerary" };
 function newItems() {
   const s = SEEN(), out = [];
-  for (const [k, es] of Object.entries(state.entries)) if (PLACE[k] !== undefined) for (const e of es) if (by(e) && by(e) !== me && (e._at || 0) > seen && !s.has(e.id)) out.push([k, e]);
+  for (const [k, es] of Object.entries(state.entries)) if (PLACE[k] !== undefined) for (const e of es) if (by(e) && by(e) !== me && (e._at || 0) > seen && !s.has(e.id) && (k !== "events" || !(fv(e.f, "to") || []).length || (fv(e.f, "to") || []).map(canon).includes(meName()))) out.push([k, e]);
   return out.sort((a, b) => (b[1]._at || 0) - (a[1]._at || 0));
 }
 function verb(k, e) { return k === "votes" ? "voted" : k === "comments" ? "commented: " + (e.title || "") : k === "pollVotes" ? "voted " + (e.title || "") + " in a poll" : k === "events" ? (e.title || "") : "added " + (e.title || e.line || "") + " to " + PLACE[k]; }
@@ -381,10 +383,15 @@ function render() {
   const see = fv(f, "_theySee") || [];
   document.documentElement.style.setProperty("--c", HUB[type] || "#ffad87");
   document.title = title;
-  const tabs = type === "trip" ? ["Overview", "Ideas", ...(see.includes("Paths") ? ["Paths"] : []), ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Itinerary days") ? ["Itinerary"] : []), ...(see.includes("To-dos") ? ["To-dos"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Estimate") && can("estimate") ? ["Estimate"] : []), ...(see.includes("Places") ? ["Places"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
+  // U245 · a trip's page: Today first (For You), Money holds the estimate and the split, To-dos is for whoever gives them
+  const giver = can("give") || DB === C.privateCloudDatabase;
+  const tripTabs = ["Today", ...(see.includes("Itinerary days") ? ["Itinerary"] : []), "Ideas", ...(see.includes("Bookings") ? ["Bookings"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...((see.includes("Estimate") && can("estimate")) || see.includes("Split costs") ? ["Money"] : []), ...(see.includes("Packing") ? ["Packing"] : []), ...(see.includes("To-dos") && giver ? ["To-dos"] : []), ...(see.includes("Paths") ? ["Paths"] : []), ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Places") ? ["Places"] : [])];
+  const tabs0 = type === "trip" ? tripTabs
     : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Tracklist") ? ["Tracklist"] : []), ...(see.includes("Listen") ? ["Listen"] : []), ...(see.includes("Cover options") ? ["Covers"] : []), ...(see.includes("References") ? ["References"] : []), ...(see.includes("Lyrics") ? ["Lyrics"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Sessions") ? ["Sessions"] : []), ...(see.includes("Credits") ? ["Credits"] : []), ...(see.includes("Release plan") ? ["Release Plan"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
     : type === "set" ? ["Set", ...(see.includes("Notes") ? ["Notes"] : [])]
     : ["Plan", "Polls", ...(see.includes("Bring and Do") ? ["Bring and Do"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])];
+  // U245 · tabs Life describes (lists with no hand-built web version) come after
+  const tabs = [...tabs0, ...layoutParts().map(x => x.tab).filter((x, i, a) => a.indexOf(x) === i && !tabs0.includes(x))];
   if (can("invite") && DB !== C.privateCloudDatabase) tabs.push("People");
   if (!tabs.includes(tab)) tab = tabs[0];
   let h = `<div class="crumb">${P.n ? "Shared by " + esc(P.n) : "Shared with you"}</div><h1>${esc(title)}</h1><div class="sub">${esc(subline(type, f))}</div>`;
@@ -414,8 +421,13 @@ function subline(type, f) {
 function lv(l, v) { return v ? `<div class="lv"><span class="caps">${esc(l)}</span><span>${v}</span></div>` : ""; }
 function sec(t, right = "") { return `<div class="sec"><b>${esc(t)}</b><span class="acts">${right}</span></div>`; }
 
-function body(type, t, f) {
+function body(type, t, f) { return bodyInner(type, t, f) + generic(t); }
+function bodyInner(type, t, f) {
   const orEmpty = (h, what) => h || `<div class="empty">Nothing in ${what} yet.</div>`;
+  if (t === "Today" && type === "trip") return forYou() + todayPlans() + pollsWaiting() + bodyInner(type, "Overview", f);
+  if (t === "Bookings") return bookings();
+  if (t === "Money") return money(f);
+  if (t === "Packing") return packing();
   if (t === "Overview" && type === "trip") {
     // mirrors Life's calmer Overview: the stage, then Where, Who, Cost, Time, and Why
     const st = txt(f, "state") || "Dreaming", stages = ["Dreaming", "Planned", "Now", "Past"], si = stages.indexOf(st);
@@ -607,21 +619,56 @@ function paths() {
 }
 // U174 · To-dos: Mine · Everyone, tick yours, add, Take it on Anyone's
 function todos() {
-  const all = E("todos"), mineOnly = open.todosMine;
-  const isMine = t => { const w = txt(t.f, "who"); return w === me || (w === "Me" && false); };
-  const ts = all.filter(t => !mineOnly || isMine(t));
-  let h = sec("To-dos", `<span class="caps">${all.filter(t => !fv(t.f, "done")).length} open</span>${can("add") ? `<span class="caps act" data-add="todos">+ To-do</span>` : ""}`);
-  h += `<div style="padding:8px 0"><span class="choice ${mineOnly ? "" : "on"}" data-tmine="0">Everyone</span><span class="choice ${mineOnly ? "on" : ""}" data-tmine="1">Mine</span></div>`;
-  if (open["add.todos"]) h += `<div class="form" data-form="todos"><input name="title" placeholder="A to-do (buy adapters)"><div><span class="btn fill" data-post="todos">Add</span></div></div>`;
-  if (!ts.length) h += `<div class="empty">No to-dos${mineOnly ? " for you" : ""}.</div>`;
-  for (const t of ts) {
-    const w = txt(t.f, "who") || "Anyone", done = !!fv(t.f, "done"), owner = w === "Me";
-    const whoName = owner ? (P.n || "Owner") : w;
-    h += `<div class="row"><div><div class="t" style="color:${done ? "var(--faint)" : "var(--ink)"}">${done ? "✓ " : ""}${esc(t.title)}</div><div class="l">${w === "Anyone" ? "Anyone" : nameHTML(whoName)}</div></div>
-      <div class="acts">${isMine(t) && can("tick") ? `<span class="caps act" data-tick="${t.id}">${done ? "Not done" : "Done"}</span>` : ""}${w === "Anyone" && !done && can("tick") ? `<span class="caps act" data-takeon="${t.id}">Take it on</span>` : ""}</div></div>`;
-  }
+  const all = E("todos"), giver = can("give") || DB === C.privateCloudDatabase;
+  let h = sec("To-dos", `<span class="caps">${all.filter(t => !todoDone(t)).length} open</span>${giver ? `<span class="caps act" data-add="todos">+ To-do</span>` : ""}`);
+  if (open["add.todos"]) h += `<div class="form" data-form="todos"><input name="title" placeholder="A to-do (book your flight)">
+    <div class="l" style="padding:4px 0;line-height:2">For: ${["Everyone", ...crew()].map(n => `<span class="choice ${(open.todoWho || ["Everyone"]).includes(n) ? "on" : ""}" data-whopick="${esc(n)}">${esc(canon(n) === meName() && n !== "Everyone" ? "You" : n)}</span>`).join("")}</div>
+    <input name="byDate" type="date"><div><span class="btn fill" data-post="todos">Add</span></div></div>`;
+  if (!all.length) h += `<div class="empty">No to-dos yet.</div>`;
+  for (const t of all) h += todoRow(t, giver);
   return h;
 }
+// U245 · one to-do for several people: each ticks their own; it's done when all have
+function todoPeople(t) { const w = txt(t.f, "who"); if (w === "Everyone") return crew(); if (w === "Me") return [ownerName()]; return w.split(", ").filter(Boolean).map(canon); }
+const isGroupTodo = t => { const w = txt(t.f, "who"); return w === "Everyone" || w.includes(", "); };
+const tickOf = (t, p) => E("ticks").find(x => txt(x.f, "parent") === t.id && canon(by(x)) === canon(p) && fv(x.f, "off") !== true);
+const todoDone = t => isGroupTodo(t) ? todoPeople(t).length > 0 && todoPeople(t).every(p => tickOf(t, p)) : !!fv(t.f, "done");
+const isMineTodo = t => todoPeople(t).includes(meName()) || txt(t.f, "who") === me;
+function todoRow(t, giver) {
+  const ps = todoPeople(t), group = isGroupTodo(t), done = todoDone(t), w = txt(t.f, "who") || "Anyone";
+  const due = fv(t.f, "byDate"), mine = isMineTodo(t), myTick = group && tickOf(t, meName());
+  const mineDone = group ? !!myTick : done;
+  let line = group ? (giver ? `${w === "Everyone" ? "Everyone" : ps.map(n => nameHTML(n)).join(", ")}` : (w === "Everyone" ? "Everyone" : "You and others")) : (w === "Anyone" ? "Anyone" : nameHTML(w === "Me" ? ownerName() : w));
+  if (due) line += " · by " + esc(fmt(due));
+  if (group) line += ` · ${ps.filter(p => tickOf(t, p)).length} of ${ps.length} done`;
+  let h = `<div class="row" style="display:block"><div style="display:flex;justify-content:space-between;gap:10px"><div><div class="t" style="color:${mineDone ? "var(--faint)" : "var(--ink)"}">${mineDone ? "✓ " : ""}${esc(t.title)}</div><div class="l">${line}</div></div>
+    <div class="acts">${mine && can("tick") ? (group ? `<span class="caps act" data-gtick="${t.id}">${myTick ? "Not done" : "Done"}</span>` : `<span class="caps act" data-tick="${t.id}">${done ? "Not done" : "Done"}</span>`) : ""}${w === "Anyone" && !done && can("tick") ? `<span class="caps act" data-takeon="${t.id}">Take it on</span>` : ""}</div></div>`;
+  // who has done it, and when: for you and co-planners
+  if (group && giver) {
+    h += ps.map(p => { const x = tickOf(t, p); return `<div class="l" style="padding:2px 0 0 10px"><span class="sq" style="background:${x ? "var(--c)" : "transparent"};border:1.5px solid var(--c)"></span> ${nameHTML(p)} ${x ? esc(fmt(toDate(x.date))) : "not yet"}</div>`; }).join("");
+    if (!done) h += `<div style="padding:4px 0 0 10px"><span class="caps act" data-remind="${t.id}">Remind the rest ›</span></div>`;
+  }
+  return h + `</div>`;
+}
+// U245 · Today: what's given to you, today's plans, polls waiting on you
+function forYou() {
+  const ts = E("todos").filter(t => isMineTodo(t) && !(isGroupTodo(t) ? tickOf(t, meName()) : fv(t.f, "done")));
+  if (!ts.length) return "";
+  return sec("For You", `<span class="caps">${ts.length}</span>`) + ts.map(t => todoRow(t, false)).join("");
+}
+function todayPlans() {
+  const today = new Date().toDateString(), ps = E("plans").filter(p => p.date && toDate(p.date).toDateString() === today).sort((a, b) => a.date - b.date);
+  return ps.length ? sec("Today") + ps.map(p => `<div class="row"><div><div class="t">${esc(p.title)}</div><div class="l">${esc(p.line || "")}</div></div></div>`).join("") : "";
+}
+function pollsWaiting() {
+  const n = E("polls").filter(p => !txt(p.f, "picked") && !E("pollVotes").some(v => txt(v.f, "parent") === p.id && by(v) === me)).length;
+  return n && can("polls") ? `<div class="row" data-tab="Polls" style="cursor:pointer"><div class="t">${n} poll${n === 1 ? "" : "s"} waiting on you</div><span class="caps act">Vote ›</span></div>` : "";
+}
+// U245 · names: the trip's people as Life knows them; a typed first name matches a full name
+const crew = () => fv(state.fields, "_crew") || [];
+const ownerName = () => P.n || crew()[0] || "Owner";
+function canon(n) { n = String(n || ""); if (!n || n === "Me" || n === "me") return ownerName(); const c = crew().find(x => x === n || x.split(" ")[0] === n || n.split(" ")[0] === x); return c || n; }
+const meName = () => DB === C.privateCloudDatabase ? ownerName() : canon(me);
 // U174 · the estimate, read only: the per-person range and what it's made of
 function estimate(f) {
   const l = fv(f, "_est") || [];
@@ -693,7 +740,9 @@ function polls() {
   let h = sec("Polls", `<span class="caps">${ps.length}</span>`);
   if (!ps.length) return h + `<div class="empty">No polls yet.</div>`;
   for (const p of ps) {
-    const opts = String(txt(p.f, "options")).split("\n").map(s => s.trim()).filter(Boolean), picked = txt(p.f, "picked");
+    const given = String(txt(p.f, "options")).split("\n").map(s => s.trim()).filter(Boolean), picked = txt(p.f, "picked");
+    // U245 · answers people typed themselves (Your own…) join the options
+    const opts = [...given, ...E("pollVotes").filter(v => txt(v.f, "parent") === p.id).map(v => txt(v.f, "option")).filter((o, i, a) => o && !given.includes(o) && a.indexOf(o) === i)];
     h += `<div class="row"><div class="t">${esc(p.title)}</div><div class="caps">${esc(picked ? "Picked: " + picked : p.kind || "")}</div></div>`;
     for (const o of opts) {
       const vs = E("pollVotes").filter(v => txt(v.f, "parent") === p.id && txt(v.f, "option") === o), mine = vs.find(v => by(v) === me);
@@ -701,8 +750,106 @@ function polls() {
       h += `<div class="row" style="padding-left:14px"><div><div style="color:${o === picked ? "var(--c)" : "var(--ink)"};font-weight:${o === picked ? 700 : 400}">${esc(o)}</div><div class="l">${vs.map(v => nameHTML(by(v))).join(", ")}</div></div>
         <div class="acts"><span class="caps">${n} vote${n === 1 ? "" : "s"}</span>${picked ? "" : `<span class="caps act" data-pv="${p.id}|${esc(o)}" style="color:${mine ? "var(--c)" : "var(--muted)"}">${mine ? "Voted" : "+ Vote"}</span>`}</div></div>`;
     }
+    if (!picked && p.kind === "Anything" && can("polls")) h += `<div class="form" style="flex-direction:row;align-items:center;padding-left:14px"><input data-ownans="${p.id}" placeholder="Your own…"><span class="btn" style="white-space:nowrap" data-ownsend="${p.id}">Vote for it</span></div>`;
   }
   return h;
+}
+// U245 · Bookings: For Everyone, Yours (and, for co-planners, the rest)
+function bookings() {
+  const bs = E("bookings"), giver = can("give") || DB === C.privateCloudDatabase;
+  const forN = b => (fv(b.f, "forNames") || []).map(canon);
+  const all = bs.filter(b => txt(b.f, "split") === "Everyone" || !forN(b).length), yours = bs.filter(b => forN(b).includes(meName()) && !all.includes(b));
+  const rest = giver ? bs.filter(b => !all.includes(b) && !yours.includes(b)) : [];
+  const hm = m => { m = +m || 0; const h = Math.floor(m / 60), mm = String(m % 60).padStart(2, "0"); return (h % 12 || 12) + ":" + mm + (h < 12 ? " AM" : " PM"); };
+  const row = b => `<div class="row"><div><div class="t">${esc(b.title)}</div><div class="l">${esc([fv(b.f, "when") ? fmt(fv(b.f, "when")) : "", fv(b.f, "time") ? hm(fv(b.f, "time")) : "", txt(b.f, "confirmation") ? "confirmation " + txt(b.f, "confirmation") : "", txt(b.f, "status")].filter(Boolean).join(" · "))}${rest.includes(b) ? " · for " + forN(b).map(n => nameHTML(n)).join(", ") : ""}</div></div></div>`;
+  let h = sec("For Everyone", `<span class="caps">${all.length}</span>`) + (all.length ? all.map(row).join("") : `<div class="empty">No group bookings yet.</div>`);
+  if (yours.length) h += sec("Yours", `<span class="caps">${yours.length}</span>`) + yours.map(row).join("");
+  if (rest.length) h += sec("Theirs", `<span class="caps">${rest.length}</span>`) + rest.map(row).join("");
+  return h;
+}
+// U245 · Money: the estimate (their share), their balance, what they paid, payments; for co-planners everyone's
+const amt = e => +(fv(e.f, "amount") || fv(e.f, "price") || 0);
+const payer = e => canon(txt(e.f, "paidByName") || txt(e.f, "paidBy") || by(e));
+const money$ = n => "$" + (Math.round(n * 100) / 100).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+function parseShares(t) { const o = {}; for (const part of String(t || "").split(/[,;\n]/)) { const b = part.replace(/[:$€]/g, " ").trim().split(/\s+/); const n = parseFloat(b[b.length - 1]); if (b.length > 1 && !isNaN(n)) o[canon(b.slice(0, -1).join(" "))] = n; } return o; }
+function sharesOf(e, everyone) {
+  const a = amt(e), p = payer(e), split = txt(e.f, "split") || "Just me";
+  let ppl = split === "Everyone" ? everyone : split === "Pick people" ? (fv(e.f, "splitNames") || fv(e.f, "splitWith") || []).map(canon) : [p];
+  if (!ppl.length) ppl = [p];
+  const given = parseShares(txt(e.f, "shareAmounts")), mode = txt(e.f, "shareBy") || "Even";
+  if (mode === "Amounts" && Object.keys(given).length) return given;
+  if (mode === "Shares" && Object.keys(given).length) { const tot = ppl.reduce((s, x) => s + (given[x] ?? 1), 0) || 1; return Object.fromEntries(ppl.map(x => [x, a * (given[x] ?? 1) / tot])); }
+  const o = {}; for (const x of ppl) o[x] = (o[x] || 0) + a / ppl.length; return o;
+}
+function balances() {
+  const b = {}, everyone = crew().map(canon);
+  for (const e of [...E("spent"), ...E("bookings")]) { const a = amt(e); if (!a) continue; const p = payer(e); b[p] = (b[p] || 0) + a; for (const [x, v] of Object.entries(sharesOf(e, everyone))) b[x] = (b[x] || 0) - v; }
+  for (const p of E("payments")) if (String(txt(p.f, "state")).startsWith("Received")) { const a = +(fv(p.f, "amount") || 0), fr = canon(txt(p.f, "fromName") || txt(p.f, "from")), to = canon(txt(p.f, "toName") || txt(p.f, "to")); b[fr] = (b[fr] || 0) + a; b[to] = (b[to] || 0) - a; }
+  return b;
+}
+function settle(b) {
+  const debt = Object.entries(b).filter(([, v]) => v < -0.005).map(([k, v]) => [k, -v]).sort((x, y) => y[1] - x[1]);
+  const cred = Object.entries(b).filter(([, v]) => v > 0.005).sort((x, y) => y[1] - x[1]);
+  const out = [];
+  while (debt.length && cred.length) { const x = Math.min(debt[0][1], cred[0][1]); out.push([debt[0][0], cred[0][0], x]); debt[0][1] -= x; cred[0][1] -= x; if (debt[0][1] < 0.005) debt.shift(); if (cred[0][1] < 0.005) cred.shift(); }
+  return out;
+}
+function money(f) {
+  const see = fv(f, "_theySee") || [], boss = can("money") || DB === C.privateCloudDatabase, I = meName();
+  let h = see.includes("Estimate") && can("estimate") ? estimate(f) : "";
+  if (!see.includes("Split costs")) return h;
+  const tr = settle(balances()), owe = tr.filter(x => x[0] === I), owed = tr.filter(x => x[1] === I);
+  h += sec("Your Balance");
+  if (!owe.length && !owed.length) h += `<div class="empty">You're even.</div>`;
+  for (const [, to, a] of owe) h += `<div class="row"><div><div class="t">You owe ${nameHTML(to)}</div></div><div class="acts"><span>${money$(a)}</span><span class="caps act" data-paid="${esc(to)}|${a.toFixed(2)}">Paid ›</span></div></div>`;
+  for (const [from, , a] of owed) h += `<div class="row"><div><div class="t">${nameHTML(from)} owes you</div></div><div>${money$(a)}</div></div>`;
+  const mine = E("spent").filter(e => payer(e) === I);
+  h += sec("You Paid", `<span class="caps">${mine.length}</span>${can("spend") || boss ? `<span class="caps act" data-add="spent">+ Spent</span>` : ""}`);
+  if (open["add.spent"]) h += spentForm();
+  h += mine.length ? mine.map(e => spentRow(e, boss)).join("") : `<div class="empty">Nothing yet.</div>`;
+  const pays = E("payments").filter(p => boss || [canon(txt(p.f, "fromName") || txt(p.f, "from")), canon(txt(p.f, "toName") || txt(p.f, "to"))].includes(I));
+  if (pays.length) h += sec("Payments", `<span class="caps">${pays.length}</span>`) + pays.map(p => payRow(p, I)).join("");
+  if (boss) {
+    h += sec("Who Owes Whom", `<span class="caps">${tr.length ? tr.length + " to settle" : "Even"}</span>`) + (tr.length ? tr.map(([a, b, v]) => `<div class="row"><div class="t">${nameHTML(a)} → ${nameHTML(b)}</div><div>${money$(v)}</div></div>`).join("") : `<div class="empty">Everyone's even.</div>`);
+    const others = E("spent").filter(e => payer(e) !== I);
+    if (others.length) h += sec("Everyone's Spending", `<span class="caps">${others.length}</span>`) + others.map(e => spentRow(e, boss)).join("");
+  }
+  return h;
+}
+function spentRow(e, boss) {
+  const split = txt(e.f, "split") || "Just me", w = (fv(e.f, "splitNames") || fv(e.f, "splitWith") || []).map(canon);
+  const line = [money$(amt(e)), payer(e) === meName() ? "you paid" : nameHTML(payer(e)) + " paid", split === "Pick people" ? "split with " + w.map(n => nameHTML(n)).join(", ") : split === "Everyone" ? "split with everyone" : "just them", txt(e.f, "shareBy") && txt(e.f, "shareBy") !== "Even" ? esc(txt(e.f, "shareBy").toLowerCase() + ": " + txt(e.f, "shareAmounts")) : ""].filter(Boolean).join(" · ");
+  return `<div class="row"><div><div class="t">${esc(e.title)}</div><div class="l">${line}</div></div><div class="acts"><span class="caps">${esc(e.date ? fmt(toDate(e.date)) : "")}</span>${boss || by(e) === me ? `<span class="caps act" data-del="spent|${e.id}">Remove</span>` : ""}</div></div>`;
+}
+function payRow(p, I) {
+  const fr = canon(txt(p.f, "fromName") || txt(p.f, "from")), to = canon(txt(p.f, "toName") || txt(p.f, "to")), st = txt(p.f, "state") || "Sent";
+  return `<div class="row"><div><div class="t">${nameHTML(fr)} → ${nameHTML(to)} · ${money$(+(fv(p.f, "amount") || 0))}</div><div class="l">${esc([txt(p.f, "how"), p.date ? fmt(toDate(p.date)) : "", st === "Sent" ? "waiting for Got it" : st].filter(Boolean).join(" · "))}</div></div>
+    <div class="acts">${st === "Sent" && to === I ? `<span class="caps act" data-got="${p.id}|1">Got it</span><span class="caps act" style="color:var(--muted)" data-got="${p.id}|0">Didn't get it</span>` : ""}</div></div>`;
+}
+function spentForm() {
+  const s = open.spSplit || "Everyone", m = open.spBy || "Even";
+  return `<div class="form" data-form="spent"><input name="title" placeholder="What (lunch at Ramiro)"><input name="amount" type="number" step="0.01" placeholder="Amount">
+    <div class="l" style="padding:4px 0">Split: ${["Just me", "Everyone", "Pick people"].map(x => `<span class="choice ${x === s ? "on" : ""}" data-spsplit="${x}">${x}</span>`).join("")}</div>
+    ${s === "Pick people" ? `<div class="l" style="padding:2px 0;line-height:2">With: ${crew().map(n => `<span class="choice ${(open.spWith || [meName()]).includes(n) ? "on" : ""}" data-withpick="${esc(n)}">${esc(canon(n) === meName() ? "You" : n)}</span>`).join("")}</div>` : ""}
+    ${s !== "Just me" ? `<div class="l" style="padding:4px 0">Shares: ${["Even", "Amounts", "Shares"].map(x => `<span class="choice ${x === m ? "on" : ""}" data-spby="${x}">${x}</span>`).join("")}</div>${m !== "Even" ? `<input name="shareAmounts" placeholder="${m === "Amounts" ? "Maya 30, Jo 30" : "Maya 2, Jo 1"}">` : ""}` : ""}
+    <div><span class="btn fill" data-spend="1">Add</span></div></div>`;
+}
+// U245 · Packing: your own list, ticked as you pack
+function packing() {
+  const ps = E("friendPacking").filter(p => by(p) === me);
+  let h = sec("Your Packing", `<span class="caps">${ps.filter(p => fv(p.f, "done")).length} of ${ps.length}</span><span class="caps act" data-add="friendPacking">+ Item</span>`);
+  if (open["add.friendPacking"]) h += `<div class="form" data-form="friendPacking"><input name="title" placeholder="Something to pack (adapter)"><div><span class="btn fill" data-post="friendPacking">Add</span></div></div>`;
+  if (!ps.length) h += `<div class="empty">Nothing on your list yet.</div>`;
+  for (const p of ps) h += `<div class="row"><div class="t" style="color:${fv(p.f, "done") ? "var(--faint)" : "var(--ink)"}">${fv(p.f, "done") ? "✓ " : ""}${esc(p.title)}</div><div class="acts"><span class="caps act" data-ptick="${p.id}">${fv(p.f, "done") ? "Not packed" : "Packed"}</span><span class="caps act" style="color:var(--muted)" data-del="friendPacking|${p.id}">Remove</span></div></div>`;
+  return h;
+}
+// U245 · lists Life describes: drawn from its layout (Tab␟Title␟key␟Label:field|…), read only
+function layoutParts() { return (fv(state.fields, "_layout") || []).map(x => { const [tab, title, key, fs] = x.split("␟"); return { tab, title, key, fields: (fs || "").split("|").filter(Boolean).map(y => y.split(":")) }; }); }
+function generic(t) {
+  return layoutParts().filter(x => x.tab === t).map(x => {
+    const es = E(x.key);
+    return sec(x.title, `<span class="caps">${es.length}</span>`) + (es.length ? es.map(e => `<div class="row"><div><div class="t">${esc(e.title || e.line)}</div><div class="l">${esc([e.date ? fmt(toDate(e.date)) : "", ...x.fields.map(([l, k]) => { const v = fv(e.f, k); return v === "" || v == null || v === false ? "" : l + ": " + (v instanceof Date ? fmt(v) : Array.isArray(v) ? v.join(", ") : v === true ? "Yes" : String(v)); })].filter(Boolean).join(" · "))}</div></div></div>`).join("") : `<div class="empty">Nothing yet.</div>`);
+  }).join("");
 }
 // Life-style pop-ups: centered, flat; typing saves, clicking outside closes (and keeps what you typed)
 function pop(html, onClose) {
@@ -733,11 +880,21 @@ function ask(title, detail, action, yes) {
 document.addEventListener("click", async ev => {
   const j = ev.target.closest("[data-join],[data-askagain]");
   if (j) { if (j.dataset.join) await askToJoin(); else showAsk(); return; }
-  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-credit],[data-ctick],[data-upload],[data-order],[data-moment],[data-seek],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave]");
+  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-credit],[data-ctick],[data-upload],[data-order],[data-moment],[data-seek],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave],[data-gtick],[data-remind],[data-paid],[data-got],[data-spend],[data-spsplit],[data-spby],[data-ptick],[data-ownsend],[data-paysend],[data-whopick],[data-withpick]");
   if (!t) return;
   const d = t.dataset;
   if (d.tab) { tab = d.tab; STORE("life.tab", tab); render(); }
   else if (d.add) { open["add." + d.add] = !open["add." + d.add]; render(); const i = document.querySelector(`[data-form="${d.add}"] input`); if (i) i.focus(); }
+  else if (d.post === "todos") {
+    // U245 · a to-do for Everyone or for picked people, with a by date
+    if (!me) return askName();
+    const box = document.querySelector(`[data-form="todos"]`), title = (box.querySelector("[name=title]").value || "").trim(); if (!title) return;
+    const picked = open.todoWho || ["Everyone"]; open.todoWho = null;
+    const who = picked.includes("Everyone") || !picked.length ? "Everyone" : picked.join(", ");
+    const e = { title, date: now(), f: { who: { t: "s", v: who } } }, bd = box.querySelector("[name=byDate]").value;
+    if (bd) e.f.byDate = { t: "d", v: new Date(bd + "T12:00:00").getTime() / 1000 - REF };
+    open["add.todos"] = false; await save("todos", e);
+  }
   else if (d.post) {
     if (!me) return askName();
     const box = document.querySelector(`[data-form="${d.post}"]`), vals = Object.fromEntries([...box.querySelectorAll("input,textarea")].map(i => [i.name, i.value.trim()]));
@@ -821,6 +978,64 @@ document.addEventListener("click", async ev => {
   else if (d.tmine) { open.todosMine = d.tmine === "1"; render(); }
   else if (d.tick) { const e = E("todos").find(x => x.id === d.tick); if (e) { const x = Object.assign({}, e, { f: Object.assign({}, e.f) }); x.f.done = { t: "b", v: !fv(e.f, "done") }; await save("todos", x); } }
   else if (d.takeon) { if (!me) return askName(); const e = E("todos").find(x => x.id === d.takeon); if (e) { const x = Object.assign({}, e, { f: Object.assign({}, e.f) }); x.f.who = { t: "s", v: me }; await save("todos", x); } }
+  else if (d.gtick) {
+    if (!me) return askName();
+    const mine = E("ticks").find(x => txt(x.f, "parent") === d.gtick && by(x) === me);
+    if (mine) { const x = Object.assign({}, mine, { f: Object.assign({}, mine.f) }); x.f.off = { t: "b", v: fv(mine.f, "off") !== true }; x.date = now(); await save("ticks", x); }
+    else await save("ticks", { title: "Done", date: now(), f: { parent: { t: "s", v: d.gtick } } });
+  }
+  else if (d.remind) {
+    const t = E("todos").find(x => x.id === d.remind); if (!t) return;
+    const rest = todoPeople(t).filter(p => !tickOf(t, p) && p !== meName());
+    if (rest.length) { await save("events", { title: "Reminder: " + t.title, date: now(), f: { to: { t: "l", v: rest } } }); alertLine("Reminded " + rest.join(", ") + "."); }
+  }
+  else if (d.ptick) { const e = E("friendPacking").find(x => x.id === d.ptick); if (e) { const x = Object.assign({}, e, { f: Object.assign({}, e.f) }); x.f.done = { t: "b", v: !fv(e.f, "done") }; await save("friendPacking", x); } }
+  else if (d.spsplit || d.spby) {
+    const keep = [...document.querySelectorAll('[data-form="spent"] input')].map(i => [i.name, i.value]);
+    if (d.spsplit) open.spSplit = d.spsplit; else open.spBy = d.spby;
+    render(); for (const [k, v] of keep) { const i = $(`[data-form="spent"] [name=${k}]`); if (i) i.value = v; }
+  }
+  else if (d.whopick) {
+    // Everyone stands alone; people can be picked together (what you typed stays)
+    const keep = ($('[data-form="todos"] [name=title]') || {}).value || "";
+    let l = open.todoWho || ["Everyone"], n = d.whopick;
+    l = n === "Everyone" ? ["Everyone"] : l.includes(n) ? l.filter(x => x !== n) : [...l.filter(x => x !== "Everyone"), n];
+    open.todoWho = l.length ? l : ["Everyone"]; render(); const i = $('[data-form="todos"] [name=title]'); if (i) i.value = keep;
+  }
+  else if (d.withpick) {
+    const box = $('[data-form="spent"]'), keep = box ? [...box.querySelectorAll("input")].map(i => [i.name, i.value]) : [];
+    let l = open.spWith || [meName()], n = d.withpick; l = l.includes(n) ? l.filter(x => x !== n) : [...l, n];
+    open.spWith = l; render(); for (const [k, v] of keep) { const i = $(`[data-form="spent"] [name=${k}]`); if (i) i.value = v; }
+  }
+  else if (d.spend) {
+    if (!me) return askName();
+    const box = document.querySelector(`[data-form="spent"]`), v = n => ((box.querySelector(`[name=${n}]`) || {}).value || "").trim();
+    const a = parseFloat(v("amount")); if (!v("title") || !(a > 0)) return alertLine("Add what it was and how much.");
+    const split = open.spSplit || "Everyone", e = { title: v("title"), date: now(), f: { amount: { t: "n", v: a }, paidBy: { t: "s", v: meName() }, split: { t: "s", v: split } } };
+    if (split === "Pick people") e.f.splitWith = { t: "l", v: open.spWith || [meName()] };
+    open.spWith = null;
+    if (split !== "Just me" && (open.spBy || "Even") !== "Even") { e.f.shareBy = { t: "s", v: open.spBy }; e.f.shareAmounts = { t: "s", v: v("shareAmounts") }; }
+    open["add.spent"] = false; await save("spent", e);
+  }
+  else if (d.paid) {
+    if (!me) return askName();
+    const [to, a] = d.paid.split("|");
+    pop(`<div class="caps">Paid ${esc(to)}</div><div class="form"><input id="payAmt" type="number" step="0.01" value="${esc(a)}"><input id="payHow" placeholder="How (Venmo, Zelle, cash)" value="Venmo"><div><span class="btn fill" data-paysend="${esc(to)}">Log it</span></div><div class="l">It counts once ${esc(to)} taps Got it.</div></div>`);
+  }
+  else if (d.paysend) {
+    const a = parseFloat(($("#payAmt") || {}).value), how = (($("#payHow") || {}).value || "").trim(); if (!(a > 0)) return;
+    closePop();
+    await save("payments", { title: meName() + " → " + d.paysend, date: now(), f: { from: { t: "s", v: meName() }, to: { t: "s", v: d.paysend }, amount: { t: "n", v: a }, how: { t: "s", v: how }, state: { t: "s", v: "Sent" } } });
+  }
+  else if (d.got) {
+    const [id, ok] = d.got.split("|"), e = E("payments").find(x => x.id === id); if (!e) return;
+    const x = Object.assign({}, e, { f: Object.assign({}, e.f) }); x.f.state = { t: "s", v: ok === "1" ? "Received ✓ " + fmt(new Date()) : "Didn't get it" }; await save("payments", x);
+  }
+  else if (d.ownsend) {
+    if (!me) return askName();
+    const i = document.querySelector(`[data-ownans="${d.ownsend}"]`), o = i && i.value.trim(); if (!o) return;
+    await save("pollVotes", { title: o, date: now(), f: { parent: { t: "s", v: d.ownsend }, option: { t: "s", v: o } } });
+  }
   else if (d.leave) {
     ask("Leave " + (txt(state.fields, "_title") || "this") + "?", "You stop seeing it. What you added stays for the others. You can ask to join again with the link.", "Leave", async () => {
       try { await save("events", { title: "left", date: now(), f: {} }); } catch (e) { }
