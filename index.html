@@ -791,6 +791,7 @@ function bkForm(giver) {
   let h = `<div class="form" data-form="bkform">`;
   h += v.paste
     ? `<span class="caps">Paste confirmation email</span><textarea rows="5" name="email" placeholder="Copy the whole email from your mail app and paste it here">${esc(v.email || "")}</textarea><div><span class="btn fill" data-bkread="1">Read it</span> <span class="caps act" data-bkpaste="0">Type it in</span></div><div class="l">Only the booking is saved, not the email.</div></div>`
+    : v.legs ? bkLegs(v)
     : (v.filled ? `<div class="l" style="color:var(--c)">Filled from the email. Check it, then add.</div>` : `<div class="l"><span class="caps act" data-bkpaste="1">Paste confirmation email</span> or type it in</div>`)
     + `<div class="l" style="line-height:2">Kind: ${ch(BK_KINDS, k, "bkkind")}</div>`
     + `<input name="title" placeholder="What (TAP 204 · JFK → LIS, Alfama apartment)" value="${esc(v.title || "")}">`
@@ -805,8 +806,64 @@ function bkForm(giver) {
     + `<div><span class="btn fill" data-post="bkform">${v.edit ? "Save" : "Add booking"}</span> <span class="caps act" data-bkadd="0">Cancel</span></div></div>`;
   return h;
 }
+// U250 · the flights found in one email, each ticked; the price once, on the first
+function bkLegs(v) {
+  const on = v.legs.filter((l, i) => !(v.off || []).includes(i)).length;
+  let h = `<div class="l" style="color:var(--c)">Found ${v.legs.length} flights. Untick any you don't want, then add.</div>`;
+  v.legs.forEach((l, i) => {
+    const off = (v.off || []).includes(i);
+    h += `<div class="row" data-bkleg="${i}" style="cursor:pointer"><div><div class="caps" style="color:var(--c)">${off ? "☐" : "☑"} ${esc(l.label)}</div><div class="t">${esc(l.title)}</div><div class="l">${esc([l.day ? fmt(l.day) : "", hm(l.dep), "→", l.arrDay ? fmt(l.arrDay) : "", hm(l.arr), l.layover].filter(Boolean).join(" "))}</div></div></div>`;
+  });
+  h += `<div class="l">${[v.conf ? "Code " + esc(v.conf) : "", v.price ? money$(+v.price) + " for all, kept on the first flight" : ""].filter(Boolean).join(" · ")}</div>`;
+  return h + `<div class="l">For: <span style="color:var(--c)">You</span></div><div>${on ? `<span class="btn fill" data-bklegsave="1">${on === 2 ? "Add both" : on === v.legs.length ? "Add all " + on : "Add " + on}</span> ` : ""}<span class="caps act" data-bklegone="1">Change one first ›</span> <span class="caps act" data-bkadd="0">Cancel</span></div></div>`;
+}
+function bkLegEntry(l, conf, price) {
+  const sd = x => ({ t: "d", v: new Date(x.getFullYear(), x.getMonth(), x.getDate(), 12).getTime() / 1000 - REF });
+  const e = { date: l.day ? sd(l.day).v : now(), f: {}, title: l.title, kind: "Flights", line: [l.label, l.layover].filter(Boolean).join(" · ") };
+  if (l.day) e.f.when = sd(l.day);
+  e.f.time = { t: "n", v: l.dep }; e.f.arrive = { t: "n", v: l.arr };
+  if (l.arrDay) e.f.arriveOn = sd(l.arrDay);
+  if (conf) e.f.confirmation = { t: "s", v: conf };
+  if (+price > 0) e.f.price = { t: "n", v: +price };
+  e.f.status = { t: "s", v: "Booked" }; e.f.paidByName = { t: "s", v: meName() };
+  e.f.forNames = { t: "l", v: [meName()] }; e.f.split = { t: "s", v: "Just me" };
+  return e;
+}
 // keeps what's typed when a choice redraws the form
 function bkGrab() { const b = $('[data-form="bkform"]'); if (!b || !open.bk) return; for (const i of b.querySelectorAll("input,textarea")) open.bk[i.name] = i.value; }
+// U250 · every flight in one email: an airport code with a time, then the next code with a time; connections make one journey
+const NOT_AP = new Set(["GMT", "UTC", "EST", "EDT", "PST", "PDT", "CST", "CDT", "MST", "MDT", "CET", "BST", "WET", "USD", "EUR", "GBP", "CAD", "THE", "AND", "FOR", "NOT", "VIA"]);
+function flightLegs(s, dates) {
+  const pts = [];
+  for (const x of s.matchAll(/\(?\b([A-Z]{3})\b\)?[^\n0-9]{0,25}?\b(\d{1,2}):(\d{2})\s*([AaPp][Mm])?/g)) {
+    if (NOT_AP.has(x[1])) continue;
+    let h = +x[2]; const ap = (x[4] || "").toLowerCase(); if (ap === "pm" && h < 12) h += 12; if (ap === "am" && h === 12) h = 0;
+    if (h > 23 || +x[3] > 59) continue;
+    pts.push({ code: x[1], min: h * 60 + +x[3], at: x.index, end: x.index + x[0].length });
+  }
+  if (pts.length < 2) return [];
+  const fl = [...s.matchAll(/\b(?!AM|PM)([A-Z]{2}|[A-Z]\d|\d[A-Z])\s?\d{1,4}\b/g)].map(x => [x.index, x[0]]);
+  const legs = [];
+  for (let i = 0; i + 1 < pts.length; i += 2) {
+    const a = pts[i], b = pts[i + 1];
+    const d = dates.filter(x => x[0] < a.at).pop(), f = fl.filter(x => x[0] < a.at && a.at - x[0] < 250).pop();
+    const after = s.slice(b.end, b.end + 14), plus = /\+1|next day/i.test(after) || b.min < a.min;
+    const day = d ? d[1] : null, arrDay = day ? new Date(day.getTime() + (plus ? 86400000 : 0)) : null;
+    legs.push({ flight: f ? f[1] : "", from: a.code, to: b.code, day, dep: a.min, arrDay, arr: b.min, label: "", layover: "" });
+  }
+  if (legs.length < 2) return legs;
+  const mom = (d, m) => d ? d.getTime() + m * 60000 : null;
+  const js = [[0]];
+  for (let k = 1; k < legs.length; k++) {
+    const p = legs[k - 1], c = legs[k], pa = mom(p.arrDay, p.arr), cd = mom(c.day, c.dep);
+    if (c.from === p.to && pa != null && cd != null && cd >= pa && cd - pa < 86400000) {
+      js[js.length - 1].push(k); const m = Math.round((cd - pa) / 60000); c.layover = `${Math.floor(m / 60)} h ${m % 60} min in ${c.from}`;
+    } else js.push([k]);
+  }
+  js.forEach((ks, j) => { const name = j === 0 ? "Going" : j === 1 ? "Coming back" : "Flight " + (j + 1); ks.forEach((k, n) => legs[k].label = ks.length > 1 ? `${name} · ${n + 1} of ${ks.length}` : name); });
+  legs.forEach(l => l.title = [l.flight, l.from + " → " + l.to].filter(Boolean).join(" · "));
+  return legs;
+}
 // U248 · reads a pasted confirmation email (the same reading as Life's From an Email, plus the landing time)
 const MON = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
 function readEmail(s) {
@@ -839,6 +896,7 @@ function readEmail(s) {
   p.title = (s.split(/\n/).map(x => x.trim()).find(x => x && x.length < 80)) || "";
   const generic = t => !t || /confirm|your |thank/i.test(t) || t.length > 60;
   if (p.kind === "Stays") { const m = s.match(/(?:[A-Z][\w'&-]+ ){0,4}(?:Hotel|Hostel|Inn|Resort|Suites|Lodge|B&B|Apartment)(?: [A-Z][\w'&-]+){0,3}/); if (m && generic(p.title)) p.title = m[0].trim(); }
+  if (p.kind === "Flights") { const lg = flightLegs(s, ds); if (lg.length > 1) p.legs = lg; }
   if (p.kind === "Flights") {
     const ap = [...s.matchAll(/\(([A-Z]{3})\)/g)].map(x => x[1]), ap2 = [...s.matchAll(/\b([A-Z]{3})\s+\d{1,2}:\d{2}/g)].map(x => x[1]);
     const a = ap.length >= 2 ? ap : ap2, fl = (s.match(/\b(?!AM|PM)([A-Z]{2}|[A-Z]\d|\d[A-Z])\s?\d{1,4}\b/) || [""])[0];
@@ -960,7 +1018,7 @@ function ask(title, detail, action, yes) {
 document.addEventListener("click", async ev => {
   const j = ev.target.closest("[data-join],[data-askagain]");
   if (j) { if (j.dataset.join) await askToJoin(); else showAsk(); return; }
-  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-credit],[data-ctick],[data-upload],[data-order],[data-moment],[data-seek],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave],[data-gtick],[data-remind],[data-paid],[data-got],[data-spend],[data-spsplit],[data-spby],[data-ptick],[data-ownsend],[data-paysend],[data-whopick],[data-withpick],[data-bkadd],[data-bkpaste],[data-bkread],[data-bkkind],[data-bkfor],[data-bkwith],[data-bkby],[data-bkedit]");
+  const t = ev.target.closest("[data-tab],[data-add],[data-post],[data-vote],[data-cmt],[data-csend],[data-reply],[data-noreply],[data-del],[data-rsvp],[data-pv],[data-name],[data-seen],[data-jump],[data-allnew],[data-credit],[data-ctick],[data-upload],[data-order],[data-moment],[data-seek],[data-lyr],[data-lyrsend],[data-letin],[data-copylink],[data-sharelink],[data-tmine],[data-tick],[data-takeon],[data-leave],[data-gtick],[data-remind],[data-paid],[data-got],[data-spend],[data-spsplit],[data-spby],[data-ptick],[data-ownsend],[data-paysend],[data-whopick],[data-withpick],[data-bkadd],[data-bkpaste],[data-bkread],[data-bkkind],[data-bkfor],[data-bkwith],[data-bkby],[data-bkedit],[data-bkleg],[data-bklegsave],[data-bklegone]");
   if (!t) return;
   const d = t.dataset;
   if (d.tab) { tab = d.tab; STORE("life.tab", tab); render(); }
@@ -983,7 +1041,21 @@ document.addEventListener("click", async ev => {
     const r = readEmail(s), v = open.bk;
     Object.assign(v, { paste: false, filled: true, kind: r.kind, title: r.title || v.title, whenD: r.when ? dIn(r.when) : v.whenD, whenT: r.time != null ? tIn(r.time) : v.whenT,
       arrD: r.until ? dIn(r.until) : v.arrD, arrT: r.arrive != null ? tIn(r.arrive) : v.arrT, conf: r.code || v.conf, price: r.price ? String(r.price) : v.price });
+    v.legs = r.legs || null; v.off = [];
     v.email = ""; render();
+  }
+  // U250 · several flights in one email
+  else if (d.bkleg) { const i = +d.bkleg, o = open.bk.off || []; open.bk.off = o.includes(i) ? o.filter(x => x !== i) : [...o, i]; render(); }
+  else if (d.bklegone) {
+    const v = open.bk, keep = v.legs.filter((l, i) => !(v.off || []).includes(i)); if (!keep.length) return;
+    const l = keep[0];
+    open.bk = { kind: "Flights", filled: true, title: l.title, whenD: l.day ? dIn(l.day) : "", whenT: tIn(l.dep), arrD: l.arrDay ? dIn(l.arrDay) : "", arrT: tIn(l.arr), conf: v.conf, price: v.price, pending: keep.slice(1), pendingConf: v.conf };
+    render();
+  }
+  else if (d.bklegsave) {
+    if (!me) return askName();
+    const v = open.bk, keep = v.legs.filter((l, i) => !(v.off || []).includes(i)); open.bk = null;
+    for (let i = 0; i < keep.length; i++) await save("bookings", bkLegEntry(keep[i], v.conf, i === 0 ? v.price : ""));
   }
   else if (d.bkkind || d.bkfor || d.bkby) { bkGrab(); if (d.bkkind) open.bk.kind = d.bkkind; else if (d.bkfor) open.bk.forMode = d.bkfor; else open.bk.shareBy = d.bkby; render(); }
   else if (d.bkwith) { bkGrab(); let l = open.bk.with || [meName()]; l = l.includes(d.bkwith) ? l.filter(x => x !== d.bkwith) : [...l, d.bkwith]; open.bk.with = l; render(); }
@@ -1017,7 +1089,9 @@ document.addEventListener("click", async ev => {
       const sb = v.shareBy || "Even"; e.f.shareBy = { t: "s", v: sb };
       if (sb !== "Even" && (v.shareAmounts || "").trim()) e.f.shareAmounts = { t: "s", v: v.shareAmounts.trim() };
     }
-    open.bk = null; await save("bookings", e);
+    const pend = v.pending; open.bk = null; await save("bookings", e);
+    // Change one first ›: the rest of that email's flights come back to add
+    if (pend && pend.length) { open.bk = { kind: "Flights", legs: pend, off: [], conf: v.pendingConf || "", price: "", filled: true }; render(); }
   }
   else if (d.post) {
     if (!me) return askName();
