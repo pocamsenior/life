@@ -381,7 +381,7 @@ function render() {
   if (!loaded) return;
   const f = state.fields, type = txt(f, "_type") || "trip", title = txt(f, "_title") || "Shared with you";
   const see = fv(f, "_theySee") || [];
-  document.documentElement.style.setProperty("--c", HUB[type] || "#ffad87");
+  document.documentElement.style.setProperty("--c", HUB[type] || txt(f, "_color") || "#ffad87");
   document.title = title;
   // U245 · a trip's page: Today first (For You), Money holds the estimate and the split, To-dos is for whoever gives them
   const giver = can("give") || DB === C.privateCloudDatabase;
@@ -389,11 +389,13 @@ function render() {
   const tabs0 = type === "trip" ? tripTabs
     : type === "project" ? ["Overview", "Songs to Consider", ...(see.includes("Notes") ? ["Notes"] : []), ...(see.includes("Tracklist") ? ["Tracklist"] : []), ...(see.includes("Listen") ? ["Listen"] : []), ...(see.includes("Cover options") ? ["Covers"] : []), ...(see.includes("References") ? ["References"] : []), ...(see.includes("Lyrics") ? ["Lyrics"] : []), ...(see.includes("Polls") ? ["Polls"] : []), ...(see.includes("Checklist") ? ["Checklist"] : []), ...(see.includes("Sessions") ? ["Sessions"] : []), ...(see.includes("Credits") ? ["Credits"] : []), ...(see.includes("Release plan") ? ["Release Plan"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])]
     : type === "set" ? ["Set", ...(see.includes("Notes") ? ["Notes"] : [])]
+    : type !== "plan" ? ["Overview"]   // U271 · any kind you share
     : ["Plan", "Polls", ...(see.includes("Bring and Do") ? ["Bring and Do"] : []), ...(see.includes("Split costs") ? ["Costs"] : [])];
   // U245 · tabs Life describes (lists with no hand-built web version) come after
   const tabs = [...tabs0, ...layoutParts().map(x => x.tab).filter((x, i, a) => a.indexOf(x) === i && !tabs0.includes(x))];
   if (can("invite") && DB !== C.privateCloudDatabase) tabs.push("People");
   if (!tabs.includes(tab)) tab = tabs[0];
+  FIRST = tabs[0];
   let h = `<div class="crumb">${P.n ? "Shared by " + esc(P.n) : "Shared with you"}</div><h1>${esc(title)}</h1><div class="sub">${esc(subline(type, f))}</div>`;
   h += `<div class="tabs">${tabs.map(t => `<span class="${t === tab ? "on" : ""}" data-tab="${esc(t)}">${esc(t)}</span>`).join("")}</div>`;
   const own0 = DB === C.privateCloudDatabase, role = myRole();
@@ -421,7 +423,39 @@ function subline(type, f) {
 function lv(l, v) { return v ? `<div class="lv"><span class="caps">${esc(l)}</span><span>${v}</span></div>` : ""; }
 function sec(t, right = "") { return `<div class="sec"><b>${esc(t)}</b><span class="acts">${right}</span></div>`; }
 
-function body(type, t, f) { return bodyInner(type, t, f) + generic(t); }
+let FIRST = "";
+function body(type, t, f) { return bodyInner(type, t, f) + generic(t) + (t === FIRST ? extras(f) : ""); }
+// U271 · what Life shares beyond its own lists: your lines as words, writing, photos and files on lines,
+// records inside, Coming Up, Sessions and Activity (as on a friend's copy in Life)
+function extras(f) {
+  const parts = k => (fv(f, k) || []).map(x => String(x).split("␟"));
+  let h = "";
+  const lines = parts("_shownLines").filter(p => p.length === 2 && p[1]);
+  if (lines.length) h += sec("Details") + lines.map(([l, v]) => lv(l, esc(v))).join("");
+  for (const [n, t] of parts("_writing").filter(p => p.length >= 2)) h += sec(n) + `<div class="t" style="padding:6px 0;white-space:pre-wrap">${esc(t)}</div>`;
+  const files = (state.files || []).filter(x => x.slot === "file");
+  for (const p of [...new Set(files.map(x => x.parent))]) {
+    const fs = files.filter(x => x.parent === p);
+    h += sec(p || "Files", `<span class="caps">${fs.length}</span>`) + `<div style="display:flex;flex-wrap:wrap;gap:12px;padding-top:10px">` + fs.map(x => {
+      const ext = (x.name.split(".").pop() || "").toLowerCase();
+      if (["jpg", "jpeg", "png", "heic", "gif", "webp"].includes(ext)) return `<a href="${esc(x.url)}" target="_blank" rel="noopener"><img src="${esc(x.url)}" alt="${esc(x.name)}" style="width:140px;height:140px;object-fit:cover;border-radius:4px;display:block"></a>`;
+      if (["mov", "mp4", "m4v"].includes(ext)) return `<video controls preload="none" src="${esc(x.url)}" style="width:260px;border-radius:4px"></video>`;
+      if (["m4a", "mp3", "wav", "aif", "aiff", "caf"].includes(ext)) return `<div style="width:100%"><div class="l">${esc(x.name)}</div><audio controls preload="none" src="${esc(x.url)}" style="width:100%"></audio></div>`;
+      return `<div class="row" style="width:100%"><a class="t" href="${esc(x.url)}" target="_blank" rel="noopener" style="color:var(--c)">${esc(x.name)}</a></div>`;
+    }).join("") + `</div>`;
+  }
+  for (const k of Object.keys(f || {}).filter(k => k.startsWith("_inside.")).sort()) {
+    const rows = parts(k).filter(p => p.length === 4);
+    if (rows.length) h += sec(rows[0][0], `<span class="caps">${rows.length}</span>`) + rows.map(([, t, l, r]) => `<div class="row"><div><div class="t">${esc(t)}</div><div class="l">${esc(l)}</div></div><div class="caps">${esc(r)}</div></div>`).join("");
+  }
+  const coming = parts("_coming").filter(p => p.length === 2).map(([l, d]) => [l, new Date(d)]).filter(x => !isNaN(x[1])).sort((a, b) => a[1] - b[1]);
+  if (coming.length) h += sec("Coming Up") + coming.map(([l, d]) => `<div class="row"><div class="t">${esc(l)}</div><div class="caps">${esc(fmt(d))}</div></div>`).join("");
+  const ss = parts("_sessionsLog").filter(p => p.length === 3);
+  if (ss.length) h += sec("Sessions", `<span class="caps">${ss.length}</span>`) + ss.map(([t, d, l]) => `<div class="row"><div><div class="t">${esc(t || "Session")}</div><div class="l">${esc(l)}</div></div><div class="caps">${d ? esc(fmt(new Date(d))) : ""}</div></div>`).join("");
+  const act = parts("_activity").filter(p => p.length === 2);
+  if (act.length) h += sec("Activity") + act.map(([w, d]) => `<div class="row"><div class="t">${esc(w)}</div><div class="caps">${esc(fmt(new Date(d)))}</div></div>`).join("");
+  return h;
+}
 function bodyInner(type, t, f) {
   const orEmpty = (h, what) => h || `<div class="empty">Nothing in ${what} yet.</div>`;
   if (t === "Today" && type === "trip") return forYou() + todayPlans() + pollsWaiting() + bodyInner(type, "Overview", f);
@@ -443,6 +477,7 @@ function bodyInner(type, t, f) {
     if (see.includes("Songs and steps")) h += sec("Songs", `<span class="caps">${songs.length}</span>`) + (songs.length ? songs.map(([n, st]) => `<div class="row"><div><div class="t">${esc(n)}</div><div class="l">${esc(st || "No step yet")}</div></div></div>`).join("") : `<div class="empty">No songs yet.</div>`);
     return h + roles();
   }
+  if (t === "Overview") return sec(txt(f, "_many") || "Overview") + orEmpty(lv("Kind", esc(txt(f, "kind"))) + lv("When", esc([fv(f, "date") ? fmt(fv(f, "date")) : "", txt(f, "time")].filter(Boolean).join(" · "))) + lv("Where", esc(txt(f, "where"))), "the overview");
   if (t === "Plan") return sec("Plan") + orEmpty(lv("When", esc([fv(f, "date") ? fmt(fv(f, "date")) : "", txt(f, "time")].filter(Boolean).join(" · "))) + lv("Where", esc(txt(f, "where"))), "the plan") + who();
   if (t === "Ideas") return list("ideas", "Ideas", "+ Idea", [["title", "An idea (a place, food, something to do)"], ["source", "A link (optional)"]]);
   if (t === "People") return peopleTab();
